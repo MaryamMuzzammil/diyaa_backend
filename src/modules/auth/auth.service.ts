@@ -11,9 +11,8 @@ export class AuthService {
   ) {}
 
   async login(data: any) {
-    const users = await this.usersService.findAll();
-
-    const user = users.find(u => u.email === data.email);
+    const email = String(data.email ?? '').trim().toLowerCase();
+    const user = await this.usersService.findByEmail(email);
 
     if (!user) {
       throw new UnauthorizedException('Invalid email');
@@ -36,6 +35,7 @@ export class AuthService {
 
     return {
       access_token: this.jwtService.sign(payload),
+      user: this.usersService.toPublicUser(user),
     };
   }
 }

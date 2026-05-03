@@ -3,15 +3,29 @@ import { ValidationPipe } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AppModule } from './app.module';
 import { seedRBAC } from './seed/role.seed';
+
 console.log('TEST ENV:', process.env.DB_USERNAME);
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const dataSource = app.get(DataSource);
 
-  app.useGlobalPipes(new ValidationPipe()); // ✅ pehle lagao
+  app.enableCors({
+    origin: 'http://localhost:5173',
+    credentials: true,
+  });
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+    }),
+  );
   await seedRBAC(dataSource);
-  await app.listen(process.env.PORT ?? 3000); // ✅ sirf ek baar
+
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port);
 }
 
 bootstrap();

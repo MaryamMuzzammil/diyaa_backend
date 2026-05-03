@@ -34,7 +34,49 @@ export class User {
 
   @Column({ default: 'active' })
   status: string;
-  
+
+  @Column({ type: 'date', nullable: true })
+  date_of_birth: Date | null;
+
+  @Column({ type: 'int', nullable: true })
+  age: number | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  gender: string | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  phone: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  permanent_address: string | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  birth_certificate_number: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  previous_school: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  medical_history: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  financial_aid: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  grade: string | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  preferred_language: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  avatar_id: string | null;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  daily_goal: string | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  signup_method: string | null;
+
   @ManyToOne(() => Institute, (institute) => institute.users, { nullable: true })
   institute: Institute;
 }

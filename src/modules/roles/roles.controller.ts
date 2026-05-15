@@ -1,24 +1,39 @@
-import { Controller, Get, Post, Delete, Param, Body } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserRole } from '../users/users.entity';
 import { RolesService } from './roles.service';
 
 @Controller('roles')
 export class RolesController {
   constructor(private rolesService: RolesService) {}
 
-  // ✅ POST /roles
   @Post()
-  create(@Body() body) {
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  create(@Body() body: { name: string; description?: string }) {
     return this.rolesService.create(body);
   }
 
-  // ✅ GET /roles
   @Get()
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
   findAll() {
     return this.rolesService.findAll();
   }
 
-  // ✅ DELETE /roles/:id
   @Delete(':id')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
   remove(@Param('id') id: string) {
     return this.rolesService.remove(Number(id));
   }

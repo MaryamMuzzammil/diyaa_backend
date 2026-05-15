@@ -1,5 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
-import { ManyToOne } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { Institute } from '../institute/institute.entity';
 
 
@@ -76,6 +81,15 @@ export class User {
 
   @Column({ type: 'varchar', length: 32, nullable: true })
   signup_method: string | null;
+
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  branch: string | null;
+
+  @CreateDateColumn()
+  created_at: Date;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  last_active_at: Date | null;
 
   @ManyToOne(() => Institute, (institute) => institute.users, { nullable: true })
   institute: Institute;

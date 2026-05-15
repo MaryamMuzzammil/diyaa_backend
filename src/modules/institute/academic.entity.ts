@@ -6,7 +6,7 @@ export class AcademicConfig {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column('simple-array')
+  @Column('simple-array', { default: '' })
   grades: string[];
 
   @Column()

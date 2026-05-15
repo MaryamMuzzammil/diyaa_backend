@@ -1,17 +1,22 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { seedRBAC } from './seed/role.seed';
-
-console.log('TEST ENV:', process.env.DB_USERNAME);
+import { seedSuperAdmin } from './seed/superadmin.seed';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const dataSource = app.get(DataSource);
 
+  app.use(helmet());
+
+  const origins = process.env.CORS_ORIGINS?.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: 'http://localhost:5173',
+    origin: origins?.length ? origins : ['http://localhost:5173'],
     credentials: true,
   });
 
@@ -19,10 +24,12 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       transform: true,
-      forbidNonWhitelisted: false,
+      forbidNonWhitelisted: true,
     }),
   );
+
   await seedRBAC(dataSource);
+  await seedSuperAdmin(dataSource);
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

@@ -1,17 +1,15 @@
-import { Controller, Post, Get, Body, Query } from '@nestjs/common';
+import { Body, Controller, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import { LoginDto } from './dto/login.dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('login')
-  login(@Body() body: any) {
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  login(@Body() body: LoginDto) {
     return this.authService.login(body);
-  }
-
-  @Get('login')
-  loginFromQuery(@Query('email') email: string, @Query('password') password: string) {
-    return this.authService.login({ email, password });
   }
 }

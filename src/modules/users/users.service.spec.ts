@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
 import { User, UserRole } from './users.entity';
+import { Institute } from '../institute/institute.entity';
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn().mockResolvedValue('hashed-password'),
@@ -15,14 +15,18 @@ describe('UsersService', () => {
     create: jest.Mock;
     save: jest.Mock;
     find: jest.Mock;
+    findOne: jest.Mock;
   };
+  let instituteRepo: { findOne: jest.Mock };
 
   beforeEach(async () => {
     repo = {
       create: jest.fn(),
       save: jest.fn(),
       find: jest.fn(),
+      findOne: jest.fn(),
     };
+    instituteRepo = { findOne: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -30,6 +34,10 @@ describe('UsersService', () => {
         {
           provide: getRepositoryToken(User),
           useValue: repo,
+        },
+        {
+          provide: getRepositoryToken(Institute),
+          useValue: instituteRepo,
         },
       ],
     }).compile();
@@ -44,53 +52,71 @@ describe('UsersService', () => {
 
   describe('create', () => {
     it('hashes password and saves user with defaults', async () => {
-      const dto = { name: 'Alice', email: 'a@b.com', password: 'secret' };
-      const entity = {
-        name: dto.name,
-        email: dto.email,
-        password_hash: 'hashed-password',
+      repo.findOne.mockResolvedValue(null);
+      const saved = {
+        user_id: 1,
+        name: 'Alice',
+        email: 'a@b.com',
         role: UserRole.STUDENT,
         status: 'active',
+        password_hash: 'hashed-password',
       };
-      repo.create.mockReturnValue(entity);
-      repo.save.mockResolvedValue(entity);
+      repo.create.mockReturnValue(saved);
+      repo.save.mockResolvedValue(saved);
 
-      const result = await service.create(dto);
+      const result = await service.create({
+        name: 'Alice',
+        email: 'a@b.com',
+        password: 'secret',
+      });
 
       expect(bcrypt.hash).toHaveBeenCalledWith('secret', 10);
-      expect(repo.create).toHaveBeenCalledWith(entity);
-      expect(repo.save).toHaveBeenCalledWith(entity);
-      expect(result).toEqual(entity);
+      expect(result.message).toBe('Account created successfully');
+      expect(result.user.email).toBe('a@b.com');
+      expect(result.user.role).toBe(UserRole.STUDENT);
     });
 
     it('uses provided role when set', async () => {
-      const dto = {
+      repo.findOne.mockResolvedValue(null);
+      const saved = {
+        user_id: 2,
+        name: 'Bob',
+        email: 'b@b.com',
+        role: UserRole.TEACHER,
+        status: 'active',
+        password_hash: 'hashed-password',
+      };
+      repo.create.mockReturnValue(saved);
+      repo.save.mockResolvedValue(saved);
+
+      const result = await service.create({
         name: 'Bob',
         email: 'b@b.com',
         password: 'x',
         role: UserRole.TEACHER,
-      };
-      const entity = {
-        name: dto.name,
-        email: dto.email,
-        password_hash: 'hashed-password',
-        role: UserRole.TEACHER,
-        status: 'active',
-      };
-      repo.create.mockReturnValue(entity);
-      repo.save.mockResolvedValue(entity);
+      });
 
-      await service.create(dto);
-
-      expect(repo.create).toHaveBeenCalledWith(entity);
+      expect(result.user.role).toBe(UserRole.TEACHER);
     });
   });
 
   describe('findAll', () => {
-    it('returns repository.find()', async () => {
-      repo.find.mockResolvedValue([]);
-      await expect(service.findAll()).resolves.toEqual([]);
+    it('returns public user shapes', async () => {
+      repo.find.mockResolvedValue([
+        {
+          user_id: 1,
+          name: 'Alice',
+          email: 'a@b.com',
+          role: UserRole.STUDENT,
+          status: 'active',
+          password_hash: 'secret',
+        },
+      ]);
+      const out = await service.findAll();
       expect(repo.find).toHaveBeenCalled();
+      expect(out).toHaveLength(1);
+      expect(out[0]).not.toHaveProperty('password_hash');
+      expect(out[0].email).toBe('a@b.com');
     });
   });
 });

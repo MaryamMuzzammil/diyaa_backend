@@ -59,12 +59,24 @@ export class UsersService {
         avatar_id: user.avatar_id,
         daily_goal: user.daily_goal,
         signup_method: user.signup_method,
+        branch: user.branch,
       },
     };
   }
 
+  async touchLastActive(userId: number) {
+    await this.repo.update(userId, { last_active_at: new Date() });
+  }
+
   async findByEmail(email: string) {
     return this.repo.findOne({ where: { email } });
+  }
+
+  async findById(userId: number) {
+    return this.repo.findOne({
+      where: { user_id: userId },
+      relations: ['institute'],
+    });
   }
 
   async create(dto: CreateUserDto) {
@@ -78,6 +90,12 @@ export class UsersService {
       this.pick(dto as any, ['name', 'full_name', 'fullName']) ?? '';
     if (!name.trim()) {
       throw new BadRequestException('name (or full_name) is required');
+    }
+
+    if (dto.role === UserRole.SUPERADMIN) {
+      throw new BadRequestException(
+        'SuperAdmin accounts cannot be created via the API',
+      );
     }
 
     const existing = await this.findByEmail(dto.email);
@@ -142,7 +160,8 @@ export class UsersService {
     };
   }
 
-  findAll() {
-    return this.repo.find();
+  async findAll() {
+    const users = await this.repo.find();
+    return users.map((u) => this.toPublicUser(u));
   }
 }

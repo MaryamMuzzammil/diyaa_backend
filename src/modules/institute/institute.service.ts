@@ -21,6 +21,8 @@ import {
 } from './institute-registration.mapper';
 import { Subscription } from './subscription.entity';
 import { InstituteDashboardService } from './institute-dashboard.service';
+import { InstituteMembersService } from './institute-members.service';
+import { InstitutePermissionsService } from './institute-permissions.service';
 import { generateNextSchoolId } from './institute-school-id.util';
 
 @Injectable()
@@ -41,6 +43,8 @@ export class InstituteService {
     private usersService: UsersService,
     private authService: AuthService,
     private dashboardService: InstituteDashboardService,
+    private permissionsService: InstitutePermissionsService,
+    private membersService: InstituteMembersService,
   ) {}
 
   private withPublicUsers(rows: Institute[]) {
@@ -222,9 +226,12 @@ export class InstituteService {
       password_hash: ownerHash,
       role: UserRole.OWNER,
       phone: data.ownerPhone !== 'N/A' ? data.ownerPhone : null,
+      institute_id: institute.id,
       institute,
       status: 'active',
     });
+
+    await this.permissionsService.applyRoleDefaultsToUser(owner);
 
     const academic = await this.academicRepo.save({
       institute,
@@ -263,9 +270,12 @@ export class InstituteService {
         password_hash: principalHash,
         role: UserRole.ADMIN,
         phone: data.principalPhone,
+        institute_id: institute.id,
         institute,
         status: principalActivationRequired ? 'pending_activation' : 'active',
       });
+      await this.permissionsService.applyRoleDefaultsToUser(principal);
+      await this.membersService.createFromUser(principal, institute);
     }
 
     await this.dashboardService.seedAfterRegistration(

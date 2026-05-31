@@ -31,6 +31,12 @@ export class Subscription {
   @Column({ type: 'timestamptz', nullable: true })
   trial_ends_at: Date | null;
 
+  @Column({ type: 'varchar', length: 16, default: 'active' })
+  status: string;
+
+  @Column({ type: 'date', nullable: true })
+  renewal_date: string | null;
+
   @ManyToOne(() => Institute)
   institute: Institute;
 }

@@ -8,6 +8,9 @@ export class Permission {
   @Column({ unique: true })
   name: string;
 
+  @Column({ type: 'varchar', length: 64, default: 'general' })
+  module: string;
+
   @Column({ nullable: true })
   description: string;
 }

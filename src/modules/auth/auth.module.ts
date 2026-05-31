@@ -2,17 +2,20 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { AuthService } from './auth.service';
-import { AuthController } from './auth.controller';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Institute } from '../institute/institute.entity';
+import { AuthService } from './auth.service';import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
+import { RbacModule } from '../rbac/rbac.module';
 import { JwtStrategy } from './jwt.strategy';
 import { resolveJwtSecret } from '../../common/config/jwt-secret.util';
 
 @Module({
   imports: [
     UsersModule,
-    PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.registerAsync({
+    RbacModule,
+    TypeOrmModule.forFeature([Institute]),
+    PassportModule.register({ defaultStrategy: 'jwt' }),    JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

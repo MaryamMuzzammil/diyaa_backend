@@ -49,6 +49,9 @@ export class Institute {
   @Column({ default: 'active' })
   status: string;
 
+  @Column({ type: 'text', nullable: true })
+  suspension_reason: string | null;
+
   @Column({ default: false })
   terms_accepted: boolean;
 

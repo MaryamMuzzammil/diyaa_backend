@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
+import { assertInstituteScopedCreate } from '../users/users-institute.util';
 import { User, UserRole } from '../users/users.entity';
 import { UsersService } from '../users/users.service';
 import { AcademicConfig } from './academic.entity';
@@ -15,6 +16,7 @@ import { AssignStudentsDto } from './dto/assign-students.dto';
 import { AssignTeacherDto } from './dto/assign-teacher.dto';
 import { CreateInstituteUserDto } from './dto/create-institute-user.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
+import { SetUserPermissionsDto } from './dto/set-user-permissions.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { BillingInvoice } from './entities/billing-invoice.entity';
 import { ClassSection } from './entities/class-section.entity';
@@ -23,10 +25,14 @@ import { EngagementInsight } from './entities/engagement-insight.entity';
 import { InstituteContent } from './entities/institute-content.entity';
 import { SubjectMetric } from './entities/subject-metric.entity';
 import { Actor, InstituteAccessService } from './institute-access.service';
+import { InstitutePermissionsService } from './institute-permissions.service';
 import { seedInstituteDashboardIfEmpty } from './institute-dashboard.seed';
 import { Institute } from './institute.entity';
+import { InstituteMembersService } from './institute-members.service';
 import { ensureInstituteSchoolId } from './institute-school-id.util';
 import { Subscription } from './subscription.entity';
+import { TeacherClassAssignment } from '../teacher/entities/teacher-class-assignment.entity';
+import { Teacher } from '../teacher/teacher.entity';
 
 @Injectable()
 export class InstituteDashboardService {
@@ -51,13 +57,19 @@ export class InstituteDashboardService {
     private subjectRepo: Repository<SubjectMetric>,
     @InjectRepository(EngagementInsight)
     private insightRepo: Repository<EngagementInsight>,
+    @InjectRepository(Teacher)
+    private teacherRepo: Repository<Teacher>,
+    @InjectRepository(TeacherClassAssignment)
+    private teacherClassRepo: Repository<TeacherClassAssignment>,
     private access: InstituteAccessService,
     private usersService: UsersService,
+    private permissionsService: InstitutePermissionsService,
+    private membersService: InstituteMembersService,
   ) {}
 
   async getDashboard(instituteId: number, actor: Actor) {
     let institute = await this.access.getInstituteOrFail(instituteId);
-    this.access.assertCanView(institute, actor);
+    await this.access.assertCanView(institute, actor);
 
     institute = await ensureInstituteSchoolId(institute, this.instituteRepo);
 
@@ -128,7 +140,9 @@ export class InstituteDashboardService {
         lessons: d.lessons,
         games: d.games,
       })),
-      users: users.map((u) => this.toDashboardUser(u)),
+      users: await Promise.all(
+        users.map((u) => this.toDashboardUser(u)),
+      ),
       structure_summary: this.buildStructureSummary(classes),
       class_structure: this.buildClassStructure(classes),
       subject_performance: subjects.map((s) => ({
@@ -174,7 +188,7 @@ export class InstituteDashboardService {
   async createUser(dto: CreateInstituteUserDto, actor: Actor) {
     const instituteId = await this.resolveInstituteId(actor, dto.institute_id);
     const institute = await this.access.getInstituteOrFail(instituteId);
-    this.access.assertCanManage(institute, actor);
+    await this.access.assertCanManage(institute, actor);
 
     const existing = await this.userRepo.findOne({
       where: { email: dto.email.trim().toLowerCase() },
@@ -183,28 +197,72 @@ export class InstituteDashboardService {
       throw new BadRequestException('A user with this email already exists');
     }
 
-    if (dto.role === UserRole.SUPERADMIN) {
+    const targetRole = dto.role ?? UserRole.STUDENT;
+    if (targetRole === UserRole.SUPERADMIN) {
       throw new BadRequestException(
         'SuperAdmin accounts cannot be created via the API',
       );
     }
 
+    this.permissionsService.assertOwnerCanAssignRole(actor, targetRole);
+    assertInstituteScopedCreate(targetRole, institute.id);
+
     const hash = await bcrypt.hash(dto.password, 10);
+    const branch = dto.branch ?? dto.class_or_branch ?? 'Main Campus';
     const saved = await this.userRepo.save({
       name: dto.name.trim(),
       email: dto.email.trim().toLowerCase(),
       password_hash: hash,
-      role: dto.role ?? UserRole.STUDENT,
+      role: targetRole,
       status: 'active',
+      institute_id: institute.id,
       phone: dto.phone ?? null,
       grade: dto.grade ?? null,
-      branch: dto.branch ?? dto.class_or_branch ?? 'Main Campus',
+      branch,
+      date_of_birth: this.parseDob(dto.date_of_birth),
+      age: dto.age ?? null,
+      gender: dto.gender ?? null,
+      permanent_address: dto.permanent_address ?? null,
+      birth_certificate_number: dto.birth_certificate_number ?? null,
+      previous_school: dto.previous_school ?? null,
+      medical_history: dto.medical_history ?? null,
+      financial_aid: dto.financial_aid ?? null,
+      preferred_language: dto.preferred_language ?? null,
+      avatar_id: dto.avatar_id ?? null,
       institute,
     });
 
+    const memberRecord = await this.membersService.createForUser(
+      saved,
+      institute,
+      dto,
+    );
+
+    let permNames: string[];
+    if (dto.permissions?.length) {
+      const filtered = this.permissionsService.filterPermissionsForRole(
+        targetRole,
+        dto.permissions,
+        actor,
+      )!;
+      permNames = await this.permissionsService.setUserPermissions(
+        saved.user_id,
+        filtered,
+      );
+    } else {
+      permNames = await this.permissionsService.applyRoleDefaultsToUser(saved);
+    }
+
     return {
       message: 'User created successfully',
-      user: this.toDashboardUser(saved),
+      user: await this.toDashboardUser(saved),
+      member: this.membersService.toPublicMember(
+        saved.role,
+        memberRecord,
+        institute.id,
+        saved.user_id,
+      ),
+      permissions: permNames,
     };
   }
 
@@ -216,9 +274,10 @@ export class InstituteDashboardService {
     const user = await this.getManagedUserOrFail(userId, actor);
     user.status = dto.status.toLowerCase();
     await this.userRepo.save(user);
+    await this.membersService.syncStatus(user);
     return {
       message: 'User status updated',
-      user: this.toDashboardUser(user),
+      user: await this.toDashboardUser(user),
     };
   }
 
@@ -230,11 +289,78 @@ export class InstituteDashboardService {
     if (dto.role === UserRole.SUPERADMIN) {
       throw new BadRequestException('Cannot assign SuperAdmin role');
     }
+    this.permissionsService.assertOwnerCanAssignRole(actor, dto.role);
+    const institute = await this.access.getInstituteOrFail(user.institute!.id);
     user.role = dto.role;
     await this.userRepo.save(user);
+
+    const memberRecord = await this.membersService.replaceOnRoleChange(
+      user,
+      institute,
+      {
+        email: user.email,
+        password: '',
+        name: user.name,
+        phone: user.phone ?? undefined,
+        grade: user.grade ?? undefined,
+        branch: user.branch ?? undefined,
+      },
+    );
+
+    let permNames: string[];
+    if (dto.permissions?.length) {
+      const filtered = this.permissionsService.filterPermissionsForRole(
+        dto.role,
+        dto.permissions,
+        actor,
+      );
+      permNames = await this.permissionsService.setUserPermissions(
+        user.user_id,
+        filtered ?? dto.permissions,
+      );
+    } else {
+      permNames = await this.permissionsService.applyRoleDefaultsToUser(user);
+    }
+
     return {
       message: 'User role updated',
-      user: this.toDashboardUser(user),
+      user: await this.toDashboardUser(user),
+      member: this.membersService.toPublicMember(
+        user.role,
+        memberRecord,
+        institute.id,
+        user.user_id,
+      ),
+      permissions: permNames,
+    };
+  }
+
+  async getUserPermissionsForActor(userId: number, actor: Actor) {
+    await this.getManagedUserOrFail(userId, actor);
+  }
+
+  async setUserPermissions(
+    userId: number,
+    dto: SetUserPermissionsDto,
+    actor: Actor,
+  ) {
+    const user = await this.getManagedUserOrFail(userId, actor);
+    const filtered =
+      this.permissionsService.filterPermissionsForRole(
+        user.role,
+        dto.permissions,
+        actor,
+      ) ?? dto.permissions;
+
+    const names = await this.permissionsService.setUserPermissions(
+      user.user_id,
+      filtered,
+    );
+
+    return {
+      message: 'Permissions updated',
+      user_id: user.user_id,
+      permissions: names,
     };
   }
 
@@ -243,6 +369,7 @@ export class InstituteDashboardService {
     if (user.role === UserRole.OWNER) {
       throw new ForbiddenException('Cannot delete the institute owner');
     }
+    await this.membersService.deleteAllForUser(userId);
     await this.userRepo.delete(userId);
     return { message: 'User deleted successfully' };
   }
@@ -255,16 +382,51 @@ export class InstituteDashboardService {
     if (!section?.institute) {
       throw new NotFoundException(`Class #${classId} not found`);
     }
-    this.access.assertCanManage(section.institute, actor);
-    const name = dto.teacher_name?.trim();
+    await this.access.assertCanManage(section.institute, actor);
+
+    let name = dto.teacher_name?.trim();
+    let teacherRecord: Teacher | null = null;
+
+    if (dto.teacher_id != null) {
+      teacherRecord = await this.teacherRepo.findOne({
+        where: {
+          id: dto.teacher_id,
+          institute: { id: section.institute.id },
+        },
+        relations: ['user'],
+      });
+      if (!teacherRecord) {
+        throw new NotFoundException(`Teacher #${dto.teacher_id} not found`);
+      }
+      name = teacherRecord.name;
+    }
+
     if (!name) {
-      throw new BadRequestException('teacher_name is required');
+      throw new BadRequestException('teacher_name or teacher_id is required');
     }
 
     const names = new Set(section.teacher_names ?? []);
     names.add(name);
     section.teacher_names = [...names];
     await this.classRepo.save(section);
+
+    if (teacherRecord) {
+      const exists = await this.teacherClassRepo.findOne({
+        where: {
+          teacher: { id: teacherRecord.id },
+          class_section: { id: section.id },
+        },
+      });
+      if (!exists) {
+        await this.teacherClassRepo.save(
+          this.teacherClassRepo.create({
+            teacher: teacherRecord,
+            class_section: section,
+            subjects: teacherRecord.subjects,
+          }),
+        );
+      }
+    }
 
     return {
       message: 'Teacher assigned',
@@ -280,7 +442,7 @@ export class InstituteDashboardService {
     if (!section?.institute) {
       throw new NotFoundException(`Class #${classId} not found`);
     }
-    this.access.assertCanManage(section.institute, actor);
+    await this.access.assertCanManage(section.institute, actor);
 
     if (dto.student_count != null) {
       section.student_count = dto.student_count;
@@ -308,7 +470,7 @@ export class InstituteDashboardService {
     if (!content?.institute) {
       throw new NotFoundException(`Content #${contentId} not found`);
     }
-    this.access.assertCanManage(content.institute, actor);
+    await this.access.assertCanManage(content.institute, actor);
     content.assigned_to = dto.assigned_to.trim();
     await this.contentRepo.save(content);
 
@@ -333,7 +495,7 @@ export class InstituteDashboardService {
       throw new NotFoundException(`User #${userId} not found`);
     }
     const institute = await this.access.getInstituteOrFail(user.institute.id);
-    this.access.assertCanManage(institute, actor);
+    await this.access.assertCanManage(institute, actor);
     return user;
   }
 
@@ -451,14 +613,17 @@ export class InstituteDashboardService {
     };
   }
 
-  private toDashboardUser(user: User) {
+  private async toDashboardUser(user: User) {
     const publicUser = this.usersService.toPublicUser(user);
+    const permissions =
+      await this.permissionsService.getUserPermissionNames(user.user_id);
     return {
       ...publicUser,
       name: user.name,
       role: user.role,
       class_or_branch: user.branch ?? 'Main Campus',
       last_active: formatRelativeTime(user.last_active_at),
+      permissions,
     };
   }
 
@@ -479,6 +644,12 @@ export class InstituteDashboardService {
       status: inst.status,
       created_at: inst.created_at,
     };
+  }
+
+  private parseDob(raw?: string): Date | null {
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 }
 

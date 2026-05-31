@@ -2,10 +2,16 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Institute } from '../institute/institute.entity';
+
+/** SuperAdmin + free (B2C) Student may have null institute_id; all other roles require it. */
+export function roleAllowsNullInstitute(role: UserRole): boolean {
+  return role === UserRole.SUPERADMIN || role === UserRole.STUDENT;
+}
 
 
 export enum UserRole {
@@ -91,6 +97,13 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   last_active_at: Date | null;
 
-  @ManyToOne(() => Institute, (institute) => institute.users, { nullable: true })
-  institute: Institute;
+  @Column({ name: 'institute_id', type: 'int', nullable: true })
+  institute_id: number | null;
+
+  @ManyToOne(() => Institute, (institute) => institute.users, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'institute_id' })
+  institute: Institute | null;
 }

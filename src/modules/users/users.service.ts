@@ -9,6 +9,7 @@ import { User, UserRole } from './users.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcrypt';
 import { Institute } from '../institute/institute.entity';
+import { assertInstituteIdForRole } from './users-institute.util';
 
 @Injectable()
 export class UsersService {
@@ -44,6 +45,7 @@ export class UsersService {
       email: user.email,
       role: user.role,
       status: user.status,
+      institute_id: user.institute_id ?? user.institute?.id ?? null,
       profile: {
         date_of_birth: user.date_of_birth,
         age: user.age,
@@ -103,16 +105,9 @@ export class UsersService {
       throw new ConflictException('A user with this email already exists');
     }
 
-    let institute: Institute | undefined;
-    if (dto.instituteId != null) {
-      const found = await this.instituteRepo.findOne({
-        where: { id: dto.instituteId },
-      });
-      if (!found) {
-        throw new BadRequestException('instituteId not found');
-      }
-      institute = found;
-    }
+    const role = dto.role ?? UserRole.STUDENT;
+    const institute = await this.resolveInstituteForCreate(role, dto.instituteId);
+    assertInstituteIdForRole(role, institute?.id ?? null);
 
     const hash = await bcrypt.hash(dto.password, 10);
 
@@ -120,8 +115,10 @@ export class UsersService {
       name: name.trim(),
       email: dto.email.trim().toLowerCase(),
       password_hash: hash,
-      role: dto.role ?? UserRole.STUDENT,
+      role,
       status: 'active',
+      institute_id: institute?.id ?? null,
+      institute: institute ?? null,
       date_of_birth: this.parseDob(
         this.pick(dto as any, ['date_of_birth', 'dateOfBirth']),
       ),
@@ -150,7 +147,6 @@ export class UsersService {
       daily_goal: this.pick(dto as any, ['daily_goal', 'dailyGoal']) ?? null,
       signup_method:
         this.pick(dto as any, ['signup_method', 'signupMethod']) ?? null,
-      ...(institute ? { institute } : {}),
     });
 
     const saved = await this.repo.save(user);
@@ -161,7 +157,21 @@ export class UsersService {
   }
 
   async findAll() {
-    const users = await this.repo.find();
+    const users = await this.repo.find({ relations: ['institute'] });
     return users.map((u) => this.toPublicUser(u));
+  }
+
+  private async resolveInstituteForCreate(
+    role: UserRole,
+    instituteId?: number,
+  ): Promise<Institute | null> {
+    if (instituteId == null) {
+      return null;
+    }
+    const found = await this.instituteRepo.findOne({ where: { id: instituteId } });
+    if (!found) {
+      throw new BadRequestException('instituteId not found');
+    }
+    return found;
   }
 }

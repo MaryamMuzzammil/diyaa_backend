@@ -13,6 +13,9 @@ import { RolePermissionModule } from './Permissions/rolePermission.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { InstituteModule } from './modules/institute/institute.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { StudentModule } from './modules/student/student.module';
+import { TeacherModule } from './modules/teacher/teacher.module';
+import { ChatbotModule } from './modules/chatbot/chatbot.module';
 
 @Module({
   imports: [
@@ -58,6 +61,9 @@ import { AdminModule } from './modules/admin/admin.module';
     AuthModule,
     InstituteModule,
     AdminModule,
+    StudentModule,
+    TeacherModule,
+    ChatbotModule,
   ],
   controllers: [AppController],
   providers: [

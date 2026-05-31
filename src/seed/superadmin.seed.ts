@@ -36,6 +36,8 @@ export async function seedSuperAdmin(dataSource: DataSource) {
         password_hash: hash,
         role: UserRole.SUPERADMIN,
         status: 'active',
+        institute_id: null,
+        institute: null,
         signup_method: 'system_seed',
       }),
     );

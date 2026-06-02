@@ -20,6 +20,7 @@ import { AssignStudentsDto } from './dto/assign-students.dto';
 import { AssignTeacherDto } from './dto/assign-teacher.dto';
 import { CreateInstituteUserDto } from './dto/create-institute-user.dto';
 import { RegisterInstituteDto } from './dto/register-institute.dto';
+import { UpdateInstituteUserDto } from './dto/update-institute-user.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { SetUserPermissionsDto } from './dto/set-user-permissions.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
@@ -132,6 +133,20 @@ export class InstituteController {
     await this.access.assertCanAccessInstituteRoster(institute, req.user);
     const teachers = await this.teacherService.findByInstituteId(instituteId);
     return { institute_id: instituteId, total: teachers.length, teachers };
+  }
+
+  @Get(':instituteId/teachers/:teacherId/assigned-classes')
+  @UseGuards(AuthGuard('jwt'))
+  getTeacherAssignedClasses(
+    @Param('instituteId', ParseIntPipe) instituteId: number,
+    @Param('teacherId', ParseIntPipe) teacherId: number,
+    @Request() req: { user: JwtActor },
+  ) {
+    return this.dashboardService.getTeacherAssignedClasses(
+      instituteId,
+      teacherId,
+      req.user,
+    );
   }
 
   @Get(':instituteId/classes')
@@ -262,6 +277,16 @@ export class InstituteController {
   @UseGuards(AuthGuard('jwt'))
   createUser(@Body() body: CreateInstituteUserDto, @Request() req: { user: JwtActor }) {
     return this.dashboardService.createUser(body, req.user);
+  }
+
+  @Patch('users/:userId')
+  @UseGuards(AuthGuard('jwt'))
+  updateUser(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() body: UpdateInstituteUserDto,
+    @Request() req: { user: JwtActor },
+  ) {
+    return this.dashboardService.updateUser(userId, body, req.user);
   }
 
   @Patch('users/:userId/status')

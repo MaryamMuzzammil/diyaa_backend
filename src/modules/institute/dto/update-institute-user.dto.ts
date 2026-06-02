@@ -5,18 +5,26 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  MinLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { UserRole } from '../../users/users.entity';
 
-export class CreateInstituteUserDto {
+export class UpdateInstituteUserDto {
+  @IsOptional()
   @IsEmail()
-  email: string;
+  email?: string;
 
+  @IsOptional()
   @IsString()
-  @MinLength(6)
-  password: string;
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  confirmPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  confirm_password?: string;
 
   @IsOptional()
   @IsString()
@@ -31,20 +39,20 @@ export class CreateInstituteUserDto {
   full_name?: string;
 
   @IsOptional()
-  @IsString()
-  confirmPassword?: string;
-
-  @IsOptional()
-  @IsString()
-  confirm_password?: string;
-
-  @IsOptional()
   @IsEnum(UserRole)
   role?: UserRole;
 
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  branch?: string;
+
+  @IsOptional()
+  @IsString()
+  class_or_branch?: string;
 
   @IsOptional()
   @IsString()
@@ -57,30 +65,6 @@ export class CreateInstituteUserDto {
   @IsOptional()
   @IsString()
   assign_class?: string;
-
-  @IsOptional()
-  @IsString()
-  branch?: string;
-
-  @IsOptional()
-  @IsString()
-  class_or_branch?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  institute_id?: number;
-
-  /** Optional — defaults to role template if omitted */
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  permissions?: string[];
-
-  // Student
-  @IsOptional()
-  @IsString()
-  section?: string;
 
   @IsOptional()
   @IsString()
@@ -163,7 +147,6 @@ export class CreateInstituteUserDto {
   @IsString()
   dailyGoal?: string;
 
-  // Teacher
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
@@ -192,34 +175,4 @@ export class CreateInstituteUserDto {
   @IsOptional()
   @IsString()
   employee_id?: string;
-
-  // Parent
-  @IsOptional()
-  @IsString()
-  occupation?: string;
-
-  @IsOptional()
-  @IsString()
-  address?: string;
-
-  @IsOptional()
-  @IsArray()
-  @Type(() => Number)
-  @IsInt({ each: true })
-  student_ids?: number[];
-
-  @IsOptional()
-  @IsArray()
-  @Type(() => Number)
-  @IsInt({ each: true })
-  child_ids?: number[];
-
-  // Institute admin
-  @IsOptional()
-  @IsString()
-  designation?: string;
-
-  @IsOptional()
-  @IsString()
-  department?: string;
 }

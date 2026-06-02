@@ -25,6 +25,7 @@ export class TeacherService {
         branch: dto.branch ?? dto.class_or_branch ?? user.branch ?? 'Main Campus',
         subjects: dto.subjects?.length ? dto.subjects : null,
         qualification: dto.qualification ?? null,
+        experience: dto.experience ?? null,
         employee_id: dto.employee_id ?? null,
       }),
     );
@@ -68,9 +69,14 @@ export class TeacherService {
       email: record.email,
       status: record.status,
       branch: record.branch,
+      assigned_class: record.user?.grade ?? null,
+      assignClass: record.user?.grade ?? null,
       phone: record.phone,
       subjects: record.subjects,
+      assigned_subject: record.subjects?.[0] ?? null,
+      assignSubject: record.subjects?.[0] ?? null,
       qualification: record.qualification,
+      experience: record.experience,
       employee_id: record.employee_id,
       created_at: record.created_at,
     };

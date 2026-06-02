@@ -45,6 +45,9 @@ export class Teacher {
   qualification: string | null;
 
   @Column({ type: 'varchar', length: 64, nullable: true })
+  experience: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
   employee_id: string | null;
 
   @CreateDateColumn()

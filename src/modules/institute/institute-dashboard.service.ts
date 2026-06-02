@@ -15,6 +15,7 @@ import { AssignContentDto } from './dto/assign-content.dto';
 import { AssignStudentsDto } from './dto/assign-students.dto';
 import { AssignTeacherDto } from './dto/assign-teacher.dto';
 import { CreateInstituteUserDto } from './dto/create-institute-user.dto';
+import { UpdateInstituteUserDto } from './dto/update-institute-user.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { SetUserPermissionsDto } from './dto/set-user-permissions.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
@@ -195,6 +196,34 @@ export class InstituteDashboardService {
     const instituteId = await this.resolveInstituteId(actor, dto.institute_id);
     const institute = await this.access.getInstituteOrFail(instituteId);
     await this.access.assertCanManage(institute, actor);
+    const name = dto.name ?? dto.fullName ?? dto.full_name;
+    if (!name?.trim()) {
+      throw new BadRequestException('name is required');
+    }
+
+    const confirmPassword = dto.confirmPassword ?? dto.confirm_password;
+    if (confirmPassword != null && confirmPassword !== dto.password) {
+      throw new BadRequestException('Password confirmation does not match');
+    }
+
+    const grade = dto.grade ?? dto.assignClass ?? dto.assign_class ?? null;
+    const permanentAddress =
+      dto.permanent_address ?? dto.permanentAddress ?? null;
+    const birthCertificateNumber =
+      dto.birth_certificate_number ?? dto.birthCertificateNumber ?? null;
+    const previousSchool = dto.previous_school ?? dto.previousSchool ?? null;
+    const medicalHistory = dto.medical_history ?? dto.medicalHistory ?? null;
+    const financialAid = dto.financial_aid ?? dto.financialAid ?? null;
+    const preferredLanguage =
+      dto.preferred_language ?? dto.preferredLanguage ?? null;
+    const avatarId = dto.avatar_id ?? dto.avatarId ?? null;
+    const dailyGoal = dto.daily_goal ?? dto.dailyGoal ?? null;
+    const subjects =
+      dto.subjects?.length
+        ? dto.subjects
+        : [dto.subject, dto.assignSubject, dto.assign_subject].filter(
+            (subject): subject is string => Boolean(subject?.trim()),
+          );
 
     const existing = await this.userRepo.findOne({
       where: { email: dto.email.trim().toLowerCase() },
@@ -216,32 +245,48 @@ export class InstituteDashboardService {
     const hash = await bcrypt.hash(dto.password, 10);
     const branch = dto.branch ?? dto.class_or_branch ?? 'Main Campus';
     const saved = await this.userRepo.save({
-      name: dto.name.trim(),
+      name: name.trim(),
       email: dto.email.trim().toLowerCase(),
       password_hash: hash,
       role: targetRole,
       status: 'active',
       institute_id: institute.id,
       phone: dto.phone ?? null,
-      grade: dto.grade ?? null,
+      grade,
       branch,
-      date_of_birth: this.parseDob(dto.date_of_birth),
+      date_of_birth: this.parseDob(dto.date_of_birth ?? dto.dateOfBirth),
       age: dto.age ?? null,
       gender: dto.gender ?? null,
-      permanent_address: dto.permanent_address ?? null,
-      birth_certificate_number: dto.birth_certificate_number ?? null,
-      previous_school: dto.previous_school ?? null,
-      medical_history: dto.medical_history ?? null,
-      financial_aid: dto.financial_aid ?? null,
-      preferred_language: dto.preferred_language ?? null,
-      avatar_id: dto.avatar_id ?? null,
+      permanent_address: permanentAddress,
+      birth_certificate_number: birthCertificateNumber,
+      previous_school: previousSchool,
+      medical_history: medicalHistory,
+      financial_aid: financialAid,
+      preferred_language: preferredLanguage,
+      avatar_id: avatarId,
+      daily_goal: dailyGoal,
       institute,
     });
+
+    const normalizedDto = {
+      ...dto,
+      name: name.trim(),
+      grade: grade ?? undefined,
+      permanent_address: permanentAddress ?? undefined,
+      birth_certificate_number: birthCertificateNumber ?? undefined,
+      previous_school: previousSchool ?? undefined,
+      medical_history: medicalHistory ?? undefined,
+      financial_aid: financialAid ?? undefined,
+      preferred_language: preferredLanguage ?? undefined,
+      avatar_id: avatarId ?? undefined,
+      daily_goal: dailyGoal ?? undefined,
+      subjects,
+    };
 
     const memberRecord = await this.membersService.createForUser(
       saved,
       institute,
-      dto,
+      normalizedDto,
     );
 
     let permNames: string[];
@@ -284,6 +329,91 @@ export class InstituteDashboardService {
     return {
       message: 'User status updated',
       user: await this.toDashboardUser(user),
+    };
+  }
+
+  async updateUser(userId: number, dto: UpdateInstituteUserDto, actor: Actor) {
+    const user = await this.getManagedUserOrFail(userId, actor);
+    const name = dto.name ?? dto.fullName ?? dto.full_name;
+    const confirmPassword = dto.confirmPassword ?? dto.confirm_password;
+
+    if (dto.password && confirmPassword != null && confirmPassword !== dto.password) {
+      throw new BadRequestException('Password confirmation does not match');
+    }
+
+    if (dto.email) {
+      const email = dto.email.trim().toLowerCase();
+      const existing = await this.userRepo.findOne({ where: { email } });
+      if (existing && existing.user_id !== user.user_id) {
+        throw new BadRequestException('A user with this email already exists');
+      }
+      user.email = email;
+    }
+
+    if (name != null) {
+      if (!name.trim()) {
+        throw new BadRequestException('name cannot be empty');
+      }
+      user.name = name.trim();
+    }
+
+    if (dto.password?.trim()) {
+      user.password_hash = await bcrypt.hash(dto.password, 10);
+    }
+
+    if (dto.role != null && dto.role !== user.role) {
+      if (user.role === UserRole.OWNER) {
+        throw new ForbiddenException('Cannot change the institute owner role');
+      }
+      if (dto.role === UserRole.SUPERADMIN) {
+        throw new BadRequestException('Cannot assign SuperAdmin role');
+      }
+      this.permissionsService.assertOwnerCanAssignRole(actor, dto.role);
+      user.role = dto.role;
+    }
+
+    const grade = dto.grade ?? dto.assignClass ?? dto.assign_class;
+    const branch = dto.branch ?? dto.class_or_branch;
+    if (dto.phone !== undefined) user.phone = dto.phone || null;
+    if (branch !== undefined) user.branch = branch || null;
+    if (grade !== undefined) user.grade = grade || null;
+    if (dto.date_of_birth !== undefined || dto.dateOfBirth !== undefined) {
+      user.date_of_birth = this.parseDob(dto.date_of_birth ?? dto.dateOfBirth);
+    }
+    if (dto.age !== undefined) user.age = dto.age;
+    if (dto.gender !== undefined) user.gender = dto.gender || null;
+    const permanentAddress = dto.permanent_address ?? dto.permanentAddress;
+    const birthCertificateNumber =
+      dto.birth_certificate_number ?? dto.birthCertificateNumber;
+    const previousSchool = dto.previous_school ?? dto.previousSchool;
+    const medicalHistory = dto.medical_history ?? dto.medicalHistory;
+    const financialAid = dto.financial_aid ?? dto.financialAid;
+    const preferredLanguage = dto.preferred_language ?? dto.preferredLanguage;
+    const avatarId = dto.avatar_id ?? dto.avatarId;
+    const dailyGoal = dto.daily_goal ?? dto.dailyGoal;
+    if (permanentAddress !== undefined) {
+      user.permanent_address = permanentAddress || null;
+    }
+    if (birthCertificateNumber !== undefined) {
+      user.birth_certificate_number = birthCertificateNumber || null;
+    }
+    if (previousSchool !== undefined) user.previous_school = previousSchool || null;
+    if (medicalHistory !== undefined) user.medical_history = medicalHistory || null;
+    if (financialAid !== undefined) user.financial_aid = financialAid || null;
+    if (preferredLanguage !== undefined) {
+      user.preferred_language = preferredLanguage || null;
+    }
+    if (avatarId !== undefined) user.avatar_id = avatarId || null;
+    if (dailyGoal !== undefined) user.daily_goal = dailyGoal || null;
+
+    const saved = await this.userRepo.save(user);
+    await this.syncTeacherProfile(saved, dto);
+    await this.syncStudentProfile(saved, dto);
+    await this.membersService.syncStatus(saved);
+
+    return {
+      message: 'User updated successfully',
+      user: await this.toDashboardUser(saved),
     };
   }
 
@@ -529,6 +659,62 @@ export class InstituteDashboardService {
           email: enrollment.student.email,
         })),
       },
+    };
+  }
+
+  async getTeacherAssignedClasses(
+    instituteId: number,
+    teacherId: number,
+    actor: Actor,
+  ) {
+    const institute = await this.access.getInstituteOrFail(instituteId);
+    await this.access.assertCanAccessInstituteRoster(institute, actor);
+
+    let teacher = await this.teacherRepo.findOne({
+      where: { id: teacherId, institute: { id: instituteId } },
+      relations: ['user', 'institute'],
+    });
+
+    if (!teacher) {
+      teacher = await this.teacherRepo.findOne({
+        where: { user: { user_id: teacherId }, institute: { id: instituteId } },
+        relations: ['user', 'institute'],
+      });
+    }
+
+    if (!teacher) {
+      throw new NotFoundException(`Teacher #${teacherId} not found`);
+    }
+
+    const assignments = await this.teacherClassRepo.find({
+      where: { teacher: { id: teacher.id } },
+      relations: ['class_section'],
+      order: { id: 'ASC' },
+    });
+
+    const assignedClasses = assignments.map((assignment) => {
+      const section = assignment.class_section;
+      return {
+        assignment_id: assignment.id,
+        class_id: section.id,
+        grade: section.grade,
+        section: section.section,
+        class_name: section.section,
+        branch: section.branch,
+        subjects: assignment.subjects ?? teacher.subjects ?? [],
+        student_count: section.student_count,
+        assigned_at: assignment.created_at,
+      };
+    });
+
+    return {
+      institute_id: instituteId,
+      teacher_id: teacher.id,
+      user_id: teacher.user?.user_id,
+      teacher_name: teacher.name,
+      teacher_email: teacher.email,
+      total: assignedClasses.length,
+      assigned_classes: assignedClasses,
     };
   }
 
@@ -833,14 +1019,153 @@ export class InstituteDashboardService {
     const publicUser = this.usersService.toPublicUser(user);
     const permissions =
       await this.permissionsService.getUserPermissionNames(user.user_id);
+    const teacherProfile =
+      user.role === UserRole.TEACHER
+        ? await this.teacherRepo.findOne({
+            where: { user: { user_id: user.user_id } },
+            relations: ['user', 'institute'],
+          })
+        : null;
+    const studentProfile =
+      user.role === UserRole.STUDENT
+        ? await this.studentRepo.findOne({
+            where: { user_id: user.user_id },
+            relations: ['user'],
+          })
+        : null;
+    const teacherSubjects = teacherProfile?.subjects ?? [];
+    const dob = formatDateOnly(user.date_of_birth);
     return {
       ...publicUser,
       name: user.name,
       role: user.role,
       class_or_branch: user.branch ?? 'Main Campus',
+      assigned_class:
+        user.role === UserRole.TEACHER || user.role === UserRole.STUDENT
+          ? user.grade
+          : undefined,
+      assignClass:
+        user.role === UserRole.TEACHER || user.role === UserRole.STUDENT
+          ? user.grade
+          : undefined,
+      assigned_subject:
+        user.role === UserRole.TEACHER ? teacherSubjects[0] ?? null : undefined,
+      assignSubject:
+        user.role === UserRole.TEACHER ? teacherSubjects[0] ?? null : undefined,
+      subjects: user.role === UserRole.TEACHER ? teacherSubjects : undefined,
+      date_of_birth: user.role === UserRole.STUDENT ? dob : undefined,
+      dateOfBirth: user.role === UserRole.STUDENT ? dob : undefined,
+      phone: user.role === UserRole.STUDENT ? user.phone : undefined,
+      age: user.role === UserRole.STUDENT ? user.age : undefined,
+      gender: user.role === UserRole.STUDENT ? user.gender : undefined,
+      permanent_address:
+        user.role === UserRole.STUDENT ? user.permanent_address : undefined,
+      birth_certificate_number:
+        user.role === UserRole.STUDENT
+          ? user.birth_certificate_number
+          : undefined,
+      previous_school:
+        user.role === UserRole.STUDENT ? user.previous_school : undefined,
+      medical_history:
+        user.role === UserRole.STUDENT ? user.medical_history : undefined,
+      financial_aid:
+        user.role === UserRole.STUDENT ? user.financial_aid : undefined,
+      preferred_language:
+        user.role === UserRole.STUDENT ? user.preferred_language : undefined,
+      preferredLanguage:
+        user.role === UserRole.STUDENT ? user.preferred_language : undefined,
+      avatar_id: user.role === UserRole.STUDENT ? user.avatar_id : undefined,
+      avatarId: user.role === UserRole.STUDENT ? user.avatar_id : undefined,
+      daily_goal: user.role === UserRole.STUDENT ? user.daily_goal : undefined,
+      dailyGoal: user.role === UserRole.STUDENT ? user.daily_goal : undefined,
+      profile: teacherProfile
+        ? {
+            teacher_id: teacherProfile.id,
+            assigned_class: user.grade,
+            assigned_subject: teacherSubjects[0] ?? null,
+            subjects: teacherSubjects,
+            qualification: teacherProfile.qualification,
+            experience: teacherProfile.experience,
+          }
+        : studentProfile
+          ? {
+              student_id: studentProfile.id,
+              assigned_class: user.grade,
+              date_of_birth: dob,
+              age: user.age,
+              gender: user.gender,
+              permanent_address: user.permanent_address,
+              preferred_language: user.preferred_language,
+              avatar_id: user.avatar_id,
+              daily_goal: user.daily_goal,
+            }
+        : undefined,
       last_active: formatRelativeTime(user.last_active_at),
       permissions,
     };
+  }
+
+  private async syncTeacherProfile(user: User, dto: UpdateInstituteUserDto) {
+    if (user.role !== UserRole.TEACHER) return;
+
+    const teacher = await this.teacherRepo.findOne({
+      where: { user: { user_id: user.user_id } },
+    });
+    if (!teacher) return;
+
+    const subjects =
+      dto.subjects?.length
+        ? dto.subjects
+        : [dto.subject, dto.assignSubject, dto.assign_subject].filter(
+            (subject): subject is string => Boolean(subject?.trim()),
+          );
+    const branch = dto.branch ?? dto.class_or_branch;
+
+    teacher.name = user.name;
+    teacher.email = user.email;
+    teacher.status = user.status;
+    if (dto.phone !== undefined) teacher.phone = dto.phone || null;
+    if (branch !== undefined) teacher.branch = branch || 'Main Campus';
+    if (subjects.length) teacher.subjects = subjects;
+    if (dto.qualification !== undefined) {
+      teacher.qualification = dto.qualification || null;
+    }
+    if (dto.experience !== undefined) {
+      teacher.experience = dto.experience || null;
+    }
+    if (dto.employee_id !== undefined) {
+      teacher.employee_id = dto.employee_id || null;
+    }
+
+    await this.teacherRepo.save(teacher);
+  }
+
+  private async syncStudentProfile(user: User, dto: UpdateInstituteUserDto) {
+    if (user.role !== UserRole.STUDENT) return;
+
+    const student = await this.studentRepo.findOne({
+      where: { user_id: user.user_id },
+    });
+    if (!student) return;
+
+    const grade = dto.grade ?? dto.assignClass ?? dto.assign_class;
+    const branch = dto.branch ?? dto.class_or_branch;
+    const preferredLanguage = dto.preferred_language ?? dto.preferredLanguage;
+    const avatarId = dto.avatar_id ?? dto.avatarId;
+    const dailyGoal = dto.daily_goal ?? dto.dailyGoal;
+
+    student.name = user.name;
+    student.email = user.email;
+    student.status = user.status;
+    if (grade !== undefined) student.grade = grade || null;
+    if (branch !== undefined) student.branch = branch || 'Main Campus';
+    if (preferredLanguage !== undefined) {
+      student.preferred_language = preferredLanguage || null;
+    }
+    if (avatarId !== undefined) student.avatar_id = avatarId || null;
+    if (dailyGoal !== undefined) student.daily_goal = dailyGoal || null;
+
+    await this.studentRepo.save(student);
   }
 
   private toPublicInstitute(inst: Institute) {
@@ -876,4 +1201,8 @@ function formatRelativeTime(date: Date | null): string {
   if (sec < 3600) return `${Math.floor(sec / 60)} mins ago`;
   if (sec < 86400) return `${Math.floor(sec / 3600)} hours ago`;
   return `${Math.floor(sec / 86400)} days ago`;
+}
+
+function formatDateOnly(date: Date | null): string | null {
+  return date ? date.toISOString().slice(0, 10) : null;
 }

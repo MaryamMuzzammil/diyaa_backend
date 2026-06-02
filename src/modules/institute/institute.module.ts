@@ -5,6 +5,8 @@ import { InstituteAdminModule } from '../institute-admin/institute-admin.module'
 import { ParentModule } from '../parent/parent.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { StudentModule } from '../student/student.module';
+import { Student } from '../student/student.entity';
+import { ClassStudentEnrollment } from '../teacher/entities/class-student-enrollment.entity';
 import { TeacherClassAssignment } from '../teacher/entities/teacher-class-assignment.entity';
 import { Teacher } from '../teacher/teacher.entity';
 import { TeacherModule } from '../teacher/teacher.module';
@@ -33,8 +35,10 @@ import { Subscription } from './subscription.entity';
       AcademicConfig,
       Subscription,
       ClassSection,
+      Student,
       Teacher,
       TeacherClassAssignment,
+      ClassStudentEnrollment,
       InstituteContent,
       BillingInvoice,
       DailyActivity,

@@ -1,6 +1,11 @@
 import { UserRole } from '../users/users.entity';
 import { paginate } from './dto/pagination-query.dto';
 import { resolveSkillStatus } from '../student/constants/student-curriculum.constants';
+import {
+  findCatalogGrade,
+  findCatalogSubject,
+  findCatalogTopic,
+} from './constants/curriculum-catalog.constants';
 
 describe('Admin helpers', () => {
   it('paginates items', () => {
@@ -21,6 +26,17 @@ describe('Admin helpers', () => {
         1,
       ),
     ).toBe('unlocked');
+  });
+
+  it('resolves curriculum catalogue aliases and topics', () => {
+    const grade = findCatalogGrade('kg');
+    expect(grade).toBe('KG / Prep');
+
+    const subject = findCatalogSubject('Class 2', 'Math');
+    expect(subject).toBe('Mathematics');
+    expect(findCatalogTopic('Class 2', subject!, 'Fractions')).toBe(
+      'Fractions',
+    );
   });
 });
 

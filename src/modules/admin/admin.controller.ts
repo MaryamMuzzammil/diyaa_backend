@@ -246,6 +246,11 @@ export class AdminController {
   }
 
   // --- Curriculum ---
+  @Get('curriculum/catalog')
+  getCurriculumCatalog() {
+    return this.platformService.getCurriculumCatalog();
+  }
+
   @Get('curriculum/versions')
   listCurriculumVersions() {
     return this.platformService.listCurriculumVersions();

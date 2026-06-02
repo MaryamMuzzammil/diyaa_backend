@@ -9,6 +9,12 @@ import { BillingInvoice } from '../../institute/entities/billing-invoice.entity'
 import { Institute } from '../../institute/institute.entity';
 import { Subscription } from '../../institute/subscription.entity';
 import { User, UserRole } from '../../users/users.entity';
+import {
+  CURRICULUM_CATALOG,
+  findCatalogGrade,
+  findCatalogSubject,
+  findCatalogTopic,
+} from '../constants/curriculum-catalog.constants';
 import { paginate } from '../dto/pagination-query.dto';
 import { CommunityPost } from '../entities/community-post.entity';
 import { CurriculumVersion } from '../entities/curriculum-version.entity';
@@ -23,6 +29,11 @@ import { SubscriptionPlan } from '../entities/subscription-plan.entity';
 import { AdminAuditService } from './admin-audit.service';
 
 type Actor = { sub: number; email: string; role: UserRole };
+type CreateContentBody = Partial<PlatformContent> & {
+  grade?: string;
+  subject?: string;
+  topic?: string;
+};
 
 @Injectable()
 export class AdminPlatformService {
@@ -80,12 +91,16 @@ export class AdminPlatformService {
     return { content: this.toContent(row) };
   }
 
-  async createContent(body: Partial<PlatformContent>, actor: Actor) {
+  async createContent(body: CreateContentBody, actor: Actor) {
+    const curriculum = this.resolveCurriculumSelection(body);
     const row = await this.contentRepo.save(
       this.contentRepo.create({
         title: body.title ?? 'Untitled',
         type: body.type ?? 'Lesson',
-        status: 'Pending',
+        status: body.status ?? 'Pending',
+        grade: curriculum.grade,
+        subject: curriculum.subject,
+        topic: curriculum.topic,
         body: body.body ?? null,
         submitted_by_id: actor.sub,
         submitted_by_name: actor.email,
@@ -220,6 +235,10 @@ export class AdminPlatformService {
   }
 
   // --- Curriculum ---
+  getCurriculumCatalog() {
+    return CURRICULUM_CATALOG;
+  }
+
   async listCurriculumVersions() {
     const versions = await this.curriculumRepo.find({
       order: { created_at: 'DESC' },
@@ -728,6 +747,9 @@ export class AdminPlatformService {
       title: r.title,
       type: r.type,
       status: r.status,
+      grade: r.grade,
+      subject: r.subject,
+      topic: r.topic,
       submitted_by: r.submitted_by_id
         ? {
             id: r.submitted_by_id,
@@ -741,6 +763,29 @@ export class AdminPlatformService {
       rejection_reason: r.rejection_reason,
       body: r.body,
     };
+  }
+
+  private resolveCurriculumSelection(body: CreateContentBody) {
+    if (!body.grade || !body.subject || !body.topic) {
+      throw new BadRequestException('grade, subject, and topic are required');
+    }
+
+    const grade = findCatalogGrade(body.grade);
+    if (!grade) {
+      throw new BadRequestException('Invalid curriculum grade');
+    }
+
+    const subject = findCatalogSubject(grade, body.subject);
+    if (!subject) {
+      throw new BadRequestException('Invalid curriculum subject for grade');
+    }
+
+    const topic = findCatalogTopic(grade, subject, body.topic);
+    if (!topic) {
+      throw new BadRequestException('Invalid curriculum topic for grade/subject');
+    }
+
+    return { grade, subject, topic };
   }
 }
 

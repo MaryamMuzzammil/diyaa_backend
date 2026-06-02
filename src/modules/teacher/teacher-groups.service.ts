@@ -61,16 +61,22 @@ export class TeacherGroupsService {
 
     const full = await this.groupRepo.findOne({
       where: { id: group.id },
-      relations: ['class_section', 'members'],
+      relations: ['class_section', 'members', 'members.student'],
     });
     return this.toGroupRow(full!);
   }
 
   private toGroupRow(g: TeacherStudentGroup) {
     return {
+      id: `grp_${g.id}`,
       group_id: g.id,
       name: g.name,
       student_count: g.members?.length ?? 0,
+      students:
+        g.members?.map((member) => ({
+          student_id: member.student?.id,
+          student_name: member.student?.name,
+        })) ?? [],
       class_name: g.class_section
         ? formatClassName(g.class_section.grade, g.class_section.section)
         : null,

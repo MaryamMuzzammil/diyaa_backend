@@ -4,6 +4,7 @@ import { ClassSection } from '../institute/entities/class-section.entity';
 import { StudentActivityLog } from '../student/entities/student-activity-log.entity';
 import { StudentBadge } from '../student/entities/student-badge.entity';
 import { StudentDashboardSummary } from '../student/entities/student-dashboard-summary.entity';
+import { StudentLevelProgress } from '../student/entities/student-level-progress.entity';
 import { StudentReward } from '../student/entities/student-reward.entity';
 import { StudentSubjectProgress } from '../student/entities/student-subject-progress.entity';
 import { Student } from '../student/student.entity';
@@ -11,11 +12,15 @@ import { AssignmentSubmission } from './entities/assignment-submission.entity';
 import { ClassStudentEnrollment } from './entities/class-student-enrollment.entity';
 import { TeacherAssignment } from './entities/teacher-assignment.entity';
 import { TeacherClassAssignment } from './entities/teacher-class-assignment.entity';
+import { TeacherContent } from './entities/teacher-content.entity';
 import { TeacherGroupMember } from './entities/teacher-group-member.entity';
+import { TeacherLiveClass } from './entities/teacher-live-class.entity';
 import { TeacherNotification } from './entities/teacher-notification.entity';
+import { TeacherNotificationSetting } from './entities/teacher-notification-setting.entity';
 import { TeacherStudentGroup } from './entities/teacher-student-group.entity';
 import { TeacherAssignmentsService } from './teacher-assignments.service';
 import { TeacherController } from './teacher.controller';
+import { TeacherDashboardApiService } from './teacher-dashboard-api.service';
 import { TeacherDashboardService } from './teacher-dashboard.service';
 import { TeacherGroupsService } from './teacher-groups.service';
 import { TeacherRewardsService } from './teacher-rewards.service';
@@ -36,8 +41,12 @@ import { TeacherService } from './teacher.service';
       TeacherStudentGroup,
       TeacherGroupMember,
       TeacherNotification,
+      TeacherNotificationSetting,
+      TeacherContent,
+      TeacherLiveClass,
       StudentDashboardSummary,
       StudentSubjectProgress,
+      StudentLevelProgress,
       StudentBadge,
       StudentActivityLog,
       StudentReward,
@@ -48,6 +57,7 @@ import { TeacherService } from './teacher.service';
     TeacherService,
     TeacherScopeService,
     TeacherDashboardService,
+    TeacherDashboardApiService,
     TeacherAssignmentsService,
     TeacherGroupsService,
     TeacherRewardsService,

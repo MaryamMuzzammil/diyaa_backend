@@ -20,6 +20,15 @@ export class PlatformContent {
   @Column({ type: 'varchar', length: 16, default: 'Pending' })
   status: string;
 
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  grade: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  subject: string | null;
+
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  topic: string | null;
+
   @Column({ type: 'int', nullable: true })
   submitted_by_id: number | null;
 

@@ -121,6 +121,18 @@ export class CreateInstituteUserDto {
   @IsString()
   address?: string;
 
+  @IsOptional()
+  @IsArray()
+  @Type(() => Number)
+  @IsInt({ each: true })
+  student_ids?: number[];
+
+  @IsOptional()
+  @IsArray()
+  @Type(() => Number)
+  @IsInt({ each: true })
+  child_ids?: number[];
+
   // Institute admin
   @IsOptional()
   @IsString()

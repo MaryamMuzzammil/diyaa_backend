@@ -31,7 +31,9 @@ import { Institute } from './institute.entity';
 import { InstituteMembersService } from './institute-members.service';
 import { ensureInstituteSchoolId } from './institute-school-id.util';
 import { Subscription } from './subscription.entity';
+import { ClassStudentEnrollment } from '../teacher/entities/class-student-enrollment.entity';
 import { TeacherClassAssignment } from '../teacher/entities/teacher-class-assignment.entity';
+import { Student } from '../student/student.entity';
 import { Teacher } from '../teacher/teacher.entity';
 
 @Injectable()
@@ -59,8 +61,12 @@ export class InstituteDashboardService {
     private insightRepo: Repository<EngagementInsight>,
     @InjectRepository(Teacher)
     private teacherRepo: Repository<Teacher>,
+    @InjectRepository(Student)
+    private studentRepo: Repository<Student>,
     @InjectRepository(TeacherClassAssignment)
     private teacherClassRepo: Repository<TeacherClassAssignment>,
+    @InjectRepository(ClassStudentEnrollment)
+    private enrollmentRepo: Repository<ClassStudentEnrollment>,
     private access: InstituteAccessService,
     private usersService: UsersService,
     private permissionsService: InstitutePermissionsService,
@@ -462,6 +468,184 @@ export class InstituteDashboardService {
     };
   }
 
+  async listClasses(instituteId: number, actor: Actor) {
+    const institute = await this.access.getInstituteOrFail(instituteId);
+    await this.access.assertCanView(institute, actor);
+
+    const classes = await this.classRepo.find({
+      where: { institute: { id: instituteId } },
+      order: { grade: 'ASC', section: 'ASC' },
+    });
+
+    return {
+      success: true,
+      data: {
+        classes: classes.map((section) => this.formatClassRow(section)),
+      },
+    };
+  }
+
+  async getClassAssignments(
+    instituteId: number,
+    grade: string,
+    className: string,
+    actor: Actor,
+  ) {
+    const section = await this.getClassSectionByGradeOrFail(
+      instituteId,
+      grade,
+      className,
+      actor,
+      false,
+    );
+
+    const [teacherAssignments, enrollments] = await Promise.all([
+      this.teacherClassRepo.find({
+        where: { class_section: { id: section.id } },
+        relations: ['teacher'],
+      }),
+      this.enrollmentRepo.find({
+        where: { class_section: { id: section.id } },
+        relations: ['student'],
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        grade: section.grade,
+        className: section.section,
+        subject_teachers: teacherAssignments.flatMap((assignment) =>
+          (assignment.subjects ?? []).map((subject) => ({
+            subject,
+            teacher_id: assignment.teacher.id,
+            teacher_name: assignment.teacher.name,
+          })),
+        ),
+        enrolled_students: enrollments.map((enrollment) => ({
+          id: enrollment.student.id,
+          student_id: enrollment.student.id,
+          name: enrollment.student.name,
+          email: enrollment.student.email,
+        })),
+      },
+    };
+  }
+
+  async assignSubjectTeachersByClass(
+    instituteId: number,
+    grade: string,
+    className: string,
+    body: { assignments?: Array<{ subject?: string; teacherId?: number; teacher_id?: number }> },
+    actor: Actor,
+  ) {
+    const section = await this.getClassSectionByGradeOrFail(
+      instituteId,
+      grade,
+      className,
+      actor,
+      true,
+    );
+    const assignments = body.assignments ?? [];
+    const groupedByTeacher = new Map<number, string[]>();
+
+    for (const assignment of assignments) {
+      const subject = assignment.subject?.trim();
+      const teacherId = Number(assignment.teacherId ?? assignment.teacher_id);
+      if (!subject || !teacherId) continue;
+
+      const subjects = groupedByTeacher.get(teacherId) ?? [];
+      subjects.push(subject);
+      groupedByTeacher.set(teacherId, subjects);
+    }
+
+    const existingAssignments = await this.teacherClassRepo.find({
+      where: { class_section: { id: section.id } },
+    });
+    if (existingAssignments.length) {
+      await this.teacherClassRepo.remove(existingAssignments);
+    }
+
+    const teacherNames = new Set<string>();
+    for (const [teacherId, subjects] of groupedByTeacher.entries()) {
+      const teacher = await this.teacherRepo.findOne({
+        where: {
+          id: teacherId,
+          institute: { id: instituteId },
+        },
+      });
+      if (!teacher) {
+        throw new NotFoundException(`Teacher #${teacherId} not found`);
+      }
+
+      teacherNames.add(teacher.name);
+      await this.teacherClassRepo.save(
+        this.teacherClassRepo.create({
+          teacher,
+          class_section: section,
+          subjects,
+        }),
+      );
+    }
+
+    section.teacher_names = [...teacherNames];
+    await this.classRepo.save(section);
+
+    return this.getClassAssignments(instituteId, grade, className, actor);
+  }
+
+  async assignStudentsByClass(
+    instituteId: number,
+    grade: string,
+    className: string,
+    body: { studentIds?: number[]; student_ids?: number[] },
+    actor: Actor,
+  ) {
+    const section = await this.getClassSectionByGradeOrFail(
+      instituteId,
+      grade,
+      className,
+      actor,
+      true,
+    );
+    const studentIds = body.studentIds ?? body.student_ids ?? [];
+
+    for (const studentId of studentIds) {
+      const student = await this.studentRepo.findOne({
+        where: {
+          id: Number(studentId),
+          institute_id: instituteId,
+        },
+      });
+      if (!student) {
+        throw new NotFoundException(`Student #${studentId} not found`);
+      }
+
+      const exists = await this.enrollmentRepo.findOne({
+        where: {
+          class_section: { id: section.id },
+          student: { id: student.id },
+        },
+      });
+
+      if (!exists) {
+        await this.enrollmentRepo.save(
+          this.enrollmentRepo.create({
+            class_section: section,
+            student,
+          }),
+        );
+      }
+    }
+
+    section.student_count = await this.enrollmentRepo.count({
+      where: { class_section: { id: section.id } },
+    });
+    await this.classRepo.save(section);
+
+    return this.getClassAssignments(instituteId, grade, className, actor);
+  }
+
   async assignContent(contentId: number, dto: AssignContentDto, actor: Actor) {
     const content = await this.contentRepo.findOne({
       where: { id: contentId },
@@ -497,6 +681,38 @@ export class InstituteDashboardService {
     const institute = await this.access.getInstituteOrFail(user.institute.id);
     await this.access.assertCanManage(institute, actor);
     return user;
+  }
+
+  private async getClassSectionByGradeOrFail(
+    instituteId: number,
+    grade: string,
+    className: string,
+    actor: Actor,
+    manage: boolean,
+  ) {
+    const institute = await this.access.getInstituteOrFail(instituteId);
+    if (manage) {
+      await this.access.assertCanManage(institute, actor);
+    } else {
+      await this.access.assertCanView(institute, actor);
+    }
+
+    const section = await this.classRepo.findOne({
+      where: {
+        institute: { id: instituteId },
+        grade,
+        section: className,
+      },
+      relations: ['institute'],
+    });
+
+    if (!section) {
+      throw new NotFoundException(
+        `Class ${grade} ${className} not found for institute #${instituteId}`,
+      );
+    }
+
+    return section;
   }
 
   private async resolveInstituteId(

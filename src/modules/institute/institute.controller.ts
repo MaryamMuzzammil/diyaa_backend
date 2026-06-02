@@ -134,6 +134,74 @@ export class InstituteController {
     return { institute_id: instituteId, total: teachers.length, teachers };
   }
 
+  @Get(':instituteId/classes')
+  @UseGuards(AuthGuard('jwt'))
+  listClasses(
+    @Param('instituteId', ParseIntPipe) instituteId: number,
+    @Request() req: { user: JwtActor },
+  ) {
+    return this.dashboardService.listClasses(instituteId, req.user);
+  }
+
+  @Get(':instituteId/classes/:grade/:className/assignments')
+  @UseGuards(AuthGuard('jwt'))
+  getClassAssignments(
+    @Param('instituteId', ParseIntPipe) instituteId: number,
+    @Param('grade') grade: string,
+    @Param('className') className: string,
+    @Request() req: { user: JwtActor },
+  ) {
+    return this.dashboardService.getClassAssignments(
+      instituteId,
+      grade,
+      className,
+      req.user,
+    );
+  }
+
+  @Post(':instituteId/classes/:grade/:className/subject-teachers')
+  @UseGuards(AuthGuard('jwt'))
+  assignSubjectTeachersByClass(
+    @Param('instituteId', ParseIntPipe) instituteId: number,
+    @Param('grade') grade: string,
+    @Param('className') className: string,
+    @Body()
+    body: {
+      assignments?: Array<{
+        subject?: string;
+        teacherId?: number;
+        teacher_id?: number;
+      }>;
+    },
+    @Request() req: { user: JwtActor },
+  ) {
+    return this.dashboardService.assignSubjectTeachersByClass(
+      instituteId,
+      grade,
+      className,
+      body,
+      req.user,
+    );
+  }
+
+  @Post(':instituteId/classes/:grade/:className/students')
+  @UseGuards(AuthGuard('jwt'))
+  assignStudentsByClass(
+    @Param('instituteId', ParseIntPipe) instituteId: number,
+    @Param('grade') grade: string,
+    @Param('className') className: string,
+    @Body() body: { studentIds?: number[]; student_ids?: number[] },
+    @Request() req: { user: JwtActor },
+  ) {
+    return this.dashboardService.assignStudentsByClass(
+      instituteId,
+      grade,
+      className,
+      body,
+      req.user,
+    );
+  }
+
   @Get(':instituteId/parents')
   @UseGuards(AuthGuard('jwt'))
   async listParents(
@@ -240,6 +308,24 @@ export class InstituteController {
     @Request() req: { user: JwtActor },
   ) {
     return this.dashboardService.assignStudents(classId, body, req.user);
+  }
+
+  @Post('parents/:parentId/students')
+  @UseGuards(AuthGuard('jwt'))
+  async linkParentStudents(
+    @Param('parentId', ParseIntPipe) parentId: number,
+    @Body() body: { student_ids?: number[]; child_ids?: number[] },
+    @Request() req: { user: JwtActor },
+  ) {
+    const instituteId = await this.access.resolveActorInstituteId(req.user);
+    const institute = await this.access.getInstituteOrFail(instituteId);
+    await this.access.assertCanManage(institute, req.user);
+    const children = await this.parentService.linkStudentsByParentId(
+      parentId,
+      body.student_ids ?? body.child_ids ?? [],
+      instituteId,
+    );
+    return { parent_id: parentId, children };
   }
 
   @Post('content/:contentId/assign')

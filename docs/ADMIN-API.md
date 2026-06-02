@@ -30,6 +30,7 @@ Login: `POST /auth/login` with Product Owner credentials from env (`SUPERADMIN_E
 | Content | GET/POST | `/admin/content` |
 | Content review | POST | `/admin/content/:id/approve\|reject` |
 | Games | GET | `/admin/games`, `/admin/games/analytics` |
+| Curriculum catalog | GET | `/admin/curriculum/catalog` |
 | Curriculum | GET/POST | `/admin/curriculum/versions` |
 | Publish/rollback | POST | `/admin/curriculum/versions/:id/publish\|rollback` |
 | Moderation | GET | `/admin/moderation/summary`, `/admin/moderation/queue` |
@@ -49,6 +50,45 @@ Login: `POST /auth/login` with Product Owner credentials from env (`SUPERADMIN_E
 - Revenue: `data.summary`, `data.revenue_by_school`, `data.user_distribution`, `data.active_subscriptions`, `data.expiring_subscriptions`, `data.payment_issues`
 - Suspend institute blocks tenant login except Product Owner
 - Platform settings and demo moderation/community/content rows seed on server start
+- `POST /admin/content` requires `grade`, `subject`, and `topic`; these are validated against `GET /admin/curriculum/catalog`
+
+### Curriculum catalog
+
+`GET /admin/curriculum/catalog`
+
+```json
+{
+  "success": true,
+  "data": {
+    "Nursery": {
+      "English": ["Alphabets A-Z", "Letter Recognition"],
+      "Urdu": ["حروفِ تہجی"],
+      "Mathematics": [],
+      "General Knowledge": []
+    },
+    "Class 1": {
+      "English": [],
+      "Urdu": [],
+      "Mathematics": [],
+      "Science": [],
+      "Computer": []
+    }
+  }
+}
+```
+
+`POST /admin/content`
+
+```json
+{
+  "grade": "Class 2",
+  "subject": "Mathematics",
+  "topic": "Fractions",
+  "type": "Lesson",
+  "title": "Class 2 Mathematics - Fractions",
+  "status": "Pending"
+}
+```
 
 ## Database tables (auto-created via TypeORM sync in dev)
 

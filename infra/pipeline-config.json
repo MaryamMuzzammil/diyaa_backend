@@ -1,0 +1,67 @@
+{
+  "pipeline": {
+    "name": "diyaa-frontend-pipeline",
+    "roleArn": "arn:aws:iam::932453197807:role/diyaa-pipeline-service-role",
+    "artifactStore": {
+      "type": "S3",
+      "location": "diyaa-pipeline-artifacts-932453197807"
+    },
+    "stages": [
+      {
+        "name": "Source",
+        "actions": [
+          {
+            "name": "GitHubSource",
+            "actionTypeId": {
+              "category": "Source",
+              "owner": "AWS",
+              "provider": "CodeStarSourceConnection",
+              "version": "1"
+            },
+            "runOrder": 1,
+            "configuration": {
+              "ConnectionArn": "${CONNECTION_ARN}",
+              "FullRepositoryId": "nabihaabid100-hash/Diyaagamifiedlearningapp",
+              "BranchName": "${BRANCH_NAME}",
+              "OutputArtifactFormat": "CODE_ZIP"
+            },
+            "outputArtifacts": [
+              {
+                "name": "SourceOutput"
+              }
+            ],
+            "inputArtifacts": []
+          }
+        ]
+      },
+      {
+        "name": "Build",
+        "actions": [
+          {
+            "name": "BuildAndDeploy",
+            "actionTypeId": {
+              "category": "Build",
+              "owner": "AWS",
+              "provider": "CodeBuild",
+              "version": "1"
+            },
+            "runOrder": 1,
+            "configuration": {
+              "ProjectName": "diyaa-frontend-build"
+            },
+            "outputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ],
+            "inputArtifacts": [
+              {
+                "name": "SourceOutput"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DIYAA Serverless Backend - Lambda, API Gateway, Secrets Manager, and RDS PostgreSQL.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: diyaa-backend
+  Stage:
+    Type: String
+    Default: prod
+  DatabaseName:
+    Type: String
+    Default: diyaa
+  DatabaseMasterUsername:
+    Type: String
+    Default: diyaapos
+  GitHubBranch:
+    Type: String
+    Default: main
+
+Resources:
+  # 1. Secrets Manager Secret for App Credentials
+  DiyaaBackendSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${ProjectName}-${Stage}-secrets"
+      Description: "Secrets for DIYAA backend (DB Password, JWT Secret, Groq API Key)"
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DatabaseMasterUsername}"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
+  # 2. Database Security Group (Allow public access for Option A)
+  DiyaaDatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow connection to DIYAA PostgreSQL instance"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: "0.0.0.0/0" # Restricted using master credentials, keeping costs minimal (no NAT gateway)
+
+  # 3. RDS PostgreSQL DB Instance
+  DiyaaPostgresDB:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub "${ProjectName}-${Stage}-db"
+      DBName: !Ref DatabaseName
+      AllocatedStorage: 20
+      DBInstanceClass: db.t4g.micro # Fits under AWS Free Tier
+      Engine: postgres
+      EngineVersion: "15"
+      MasterUsername: !Ref DatabaseMasterUsername
+      MasterUserPassword:
+        !Join [ "", [ "{{resolve:secretsmanager:", !Ref DiyaaBackendSecrets, ":SecretString:password}}" ] ]
+      VPCSecurityGroups:
+        - !GetAtt DiyaaDatabaseSecurityGroup.GroupId
+      PubliclyAccessible: true
+      BackupRetentionPeriod: 0
+      DeleteAutomatedBackups: true
+
+  # 4. IAM execution role for Lambda
+  DiyaaLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-${Stage}-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: lambda-secrets-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DiyaaBackendSecrets
+
+  # 5. Lambda Function for NestJS
+  DiyaaBackendLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-${Stage}-function"
+      Handler: dist/lambda.handler
+      Runtime: nodejs18.x
+      Timeout: 30
+      MemorySize: 1024
+      Role: !GetAtt DiyaaLambdaExecutionRole.Arn
+      # Code is provisioned and deployed via S3 zip from pipeline
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ message: "Bootstrap placeholder code" })
+            };
+          };
+      Environment:
+        Variables:
+          NODE_ENV: production
+          PORT: 3000
+          DB_HOST: !GetAtt DiyaaPostgresDB.Endpoint.Address
+          DB_PORT: "5432"
+          DB_NAME: !Ref DatabaseName
+          DB_USERNAME: !Ref DatabaseMasterUsername
+          DB_PASSWORD: !Join [ "", [ "{{resolve:secretsmanager:", !Ref DiyaaBackendSecrets, ":SecretString:password}}" ] ]
+          JWT_SECRET: "diyaa-jwt-secret-change-me-in-secrets-manager-32chars"
+          JWT_EXPIRES_SEC: "86400"
+          CORS_ORIGINS: "*"
+          GROQ_API_KEY: "placeholder-set-in-secrets-manager"
+          TYPEORM_SYNC: "true" # Seeding on start requires synchronize or schema migrations
+          SUPERADMIN_EMAIL: "product.owner@diyaa.local"
+          SUPERADMIN_PASSWORD: "hellodiyaa123!"
+          SUPERADMIN_NAME: "Product Owner"
+          SUPERADMIN_SYNC_PASSWORD: "false"
+
+  # 6. HTTP API Gateway
+  DiyaaHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${ProjectName}-${Stage}-api"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        AllowOrigins:
+          - "*"
+        MaxAge: 600
+
+  # 7. Integration between API Gateway and Lambda
+  DiyaaApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiyaaHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt DiyaaBackendLambda.Arn
+      PayloadFormatVersion: "2.0"
+
+  # 8. Route configuration ($default routes all traffic)
+  DiyaaApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaHttpApi
+      RouteKey: "$default"
+      Target: !Join [ "/", [ "integrations", !Ref DiyaaApiIntegration ] ]
+
+  # 9. Deployment stage
+  DiyaaApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref DiyaaHttpApi
+      StageName: "$default"
+      AutoDeploy: true
+
+  # 10. Lambda invocation permission for API Gateway
+  DiyaaLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt DiyaaBackendLambda.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiyaaHttpApi}/*"
+
+Outputs:
+  ApiEndpoint:
+    Description: "API Gateway Endpoint URL"
+    Value: !GetAtt DiyaaHttpApi.ApiEndpoint
+  SecretsARN:
+    Description: "ARN of the Secrets Manager Secret"
+    Value: !Ref DiyaaBackendSecrets
+  DatabaseEndpoint:
+    Description: "PostgreSQL Database Endpoint"
+    Value: !GetAtt DiyaaPostgresDB.Endpoint.Address

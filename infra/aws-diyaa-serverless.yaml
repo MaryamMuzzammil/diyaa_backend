@@ -1,0 +1,1058 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DIYAA serverless backend - Cognito, DynamoDB, Lambda, API Gateway, CloudWatch.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: diyaa
+  StageName:
+    Type: String
+    Default: prod
+
+Resources:
+  DiyaaUsersPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: diyaa-users
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 6
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+          TemporaryPasswordValidityDays: 7
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+
+  DiyaaUsersClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: diyaa-users-client
+      UserPoolId: !Ref DiyaaUsersPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+
+  StudentGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Student
+      UserPoolId: !Ref DiyaaUsersPool
+
+  TeacherGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Teacher
+      UserPoolId: !Ref DiyaaUsersPool
+
+  ParentGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Parent
+      UserPoolId: !Ref DiyaaUsersPool
+
+  SchoolAdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: SchoolAdmin
+      UserPoolId: !Ref DiyaaUsersPool
+
+  SuperAdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: SuperAdmin
+      UserPoolId: !Ref DiyaaUsersPool
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Users
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+
+  SchoolsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Schools
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: schoolId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: schoolId
+          KeyType: HASH
+
+  SubjectsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Subjects
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: subjectId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: subjectId
+          KeyType: HASH
+
+  GamesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Games
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: gameId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: gameId
+          KeyType: HASH
+
+  ScoresXPTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ScoresXP
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: studentId
+          AttributeType: S
+        - AttributeName: scoreId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: studentId
+          KeyType: HASH
+        - AttributeName: scoreId
+          KeyType: RANGE
+
+  StudentProgressTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: StudentProgress
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: studentId
+          AttributeType: S
+        - AttributeName: subjectId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: studentId
+          KeyType: HASH
+        - AttributeName: subjectId
+          KeyType: RANGE
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: diyaa-lambda-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: diyaa-dynamodb-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt UsersTable.Arn
+                  - !GetAtt SchoolsTable.Arn
+                  - !GetAtt SubjectsTable.Arn
+                  - !GetAtt GamesTable.Arn
+                  - !GetAtt ScoresXPTable.Arn
+                  - !GetAtt StudentProgressTable.Arn
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminCreateUser
+                  - cognito-idp:AdminAddUserToGroup
+                  - cognito-idp:AdminConfirmSignUp
+                  - cognito-idp:AdminInitiateAuth
+                  - cognito-idp:InitiateAuth
+                  - cognito-idp:SignUp
+                Resource: !GetAtt DiyaaUsersPool.Arn
+
+  AuthLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: auth-lambda
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref DiyaaUsersPool
+          USER_POOL_CLIENT_ID: !Ref DiyaaUsersClient
+          USERS_TABLE: !Ref UsersTable
+          SCHOOLS_TABLE: !Ref SchoolsTable
+      Code:
+        ZipFile: |
+          const {
+            CognitoIdentityProviderClient,
+            InitiateAuthCommand,
+            SignUpCommand,
+            AdminConfirmSignUpCommand,
+            AdminAddUserToGroupCommand
+          } = require("@aws-sdk/client-cognito-identity-provider");
+          const { DynamoDBClient, PutItemCommand, GetItemCommand } = require("@aws-sdk/client-dynamodb");
+          const crypto = require("crypto");
+
+          const cognito = new CognitoIdentityProviderClient({});
+          const dynamo = new DynamoDBClient({});
+          const json = (statusCode, body) => ({
+            statusCode,
+            headers: {
+              "content-type": "application/json",
+              "access-control-allow-origin": "*",
+              "access-control-allow-headers": "authorization,content-type",
+              "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS"
+            },
+            body: JSON.stringify(body)
+          });
+
+          function cleanPath(event) {
+            const raw = event.rawPath || event.path || "/";
+            return raw.replace(/^\/prod(?=\/|$)/, "") || "/";
+          }
+
+          function parseBody(event) {
+            if (!event.body) return {};
+            const raw = event.isBase64Encoded
+              ? Buffer.from(event.body, "base64").toString("utf8")
+              : event.body;
+            return typeof raw === "string" ? JSON.parse(raw || "{}") : raw;
+          }
+
+          function decodeJwt(token) {
+            if (!token) return {};
+            const payload = token.split(".")[1];
+            if (!payload) return {};
+            return JSON.parse(Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+          }
+
+          async function getUserFromTable(userId) {
+            if (!userId) return null;
+            const result = await dynamo.send(new GetItemCommand({
+              TableName: process.env.USERS_TABLE,
+              Key: { userId: { S: userId } }
+            }));
+            const item = result.Item;
+            if (!item) return null;
+            return {
+              id: item.userId?.S || userId,
+              email: item.email?.S || null,
+              name: item.name?.S || null,
+              role: item.role?.S || null,
+              institute_id: item.institute_id?.S || item.institute_id?.N || null
+            };
+          }
+
+          async function login(event) {
+            const body = parseBody(event);
+            const email = body.email || body.username;
+            const password = body.password;
+            if (!email || !password) {
+              return json(400, { success: false, message: "email and password are required" });
+            }
+
+            let result;
+            try {
+              result = await cognito.send(new InitiateAuthCommand({
+                ClientId: process.env.USER_POOL_CLIENT_ID,
+                AuthFlow: "USER_PASSWORD_AUTH",
+                AuthParameters: { USERNAME: email, PASSWORD: password }
+              }));
+            } catch (error) {
+              if (error.name !== "UserNotConfirmedException") throw error;
+              await cognito.send(new AdminConfirmSignUpCommand({
+                UserPoolId: process.env.USER_POOL_ID,
+                Username: email
+              }));
+              result = await cognito.send(new InitiateAuthCommand({
+                ClientId: process.env.USER_POOL_CLIENT_ID,
+                AuthFlow: "USER_PASSWORD_AUTH",
+                AuthParameters: { USERNAME: email, PASSWORD: password }
+              }));
+            }
+            const auth = result.AuthenticationResult || {};
+            const claims = decodeJwt(auth.IdToken);
+            const tableUser = await getUserFromTable(claims.sub);
+            const user = {
+              id: tableUser?.id || claims.sub || email,
+              email: tableUser?.email || claims.email || email,
+              name: tableUser?.name || claims.name || email.split("@")[0],
+              role: tableUser?.role || claims["custom:role"] || claims["cognito:groups"]?.[0] || "Student",
+              institute_id: tableUser?.institute_id || claims["custom:institute_id"] || null
+            };
+            return json(200, {
+              success: true,
+              token: auth.IdToken || auth.AccessToken,
+              access_token: auth.IdToken || auth.AccessToken,
+              refresh_token: auth.RefreshToken,
+              expires_in: auth.ExpiresIn,
+              user
+            });
+          }
+
+          async function signup(event) {
+            const body = parseBody(event);
+            const email = body.email || body.username || body.owner_email || body.ownerEmail || body.admin_email || body.adminEmail;
+            const password = body.password;
+            const name =
+              body.name ||
+              body.fullName ||
+              body.full_name ||
+              body.owner_name ||
+              body.ownerName ||
+              body.owner_full_name ||
+              body.ownerFullName ||
+              body.admin_name ||
+              body.adminName ||
+              email?.split("@")[0];
+            const role = body.role || body.user_role || body.userRole || body.account_type || "Owner";
+            const cognitoGroup = normalizeGroupName(role);
+            const isSchoolSignup = Boolean(
+              body.school_name ||
+              body.schoolName ||
+              body.institute_name ||
+              body.instituteName ||
+              body.registration_number ||
+              body.registrationNumber ||
+              role === "Owner" ||
+              role === "School Admin" ||
+              role === "SchoolAdmin"
+            );
+            const schoolId =
+              body.institute_id ||
+              body.instituteId ||
+              body.school_id ||
+              body.schoolId ||
+              (isSchoolSignup ? crypto.randomUUID() : null);
+            if (!email || !password) {
+              return json(400, { success: false, message: "email and password are required" });
+            }
+            const confirmPassword = body.confirm_password || body.confirmPassword;
+            if (confirmPassword && confirmPassword !== password) {
+              return json(400, { success: false, message: "Password confirmation does not match" });
+            }
+
+            const result = await cognito.send(new SignUpCommand({
+              ClientId: process.env.USER_POOL_CLIENT_ID,
+              Username: email,
+              Password: password,
+              UserAttributes: [
+                { Name: "email", Value: email },
+                { Name: "name", Value: name },
+                { Name: "custom:role", Value: role }
+              ]
+            }));
+            const userId = result.UserSub || email;
+            await cognito.send(new AdminConfirmSignUpCommand({
+              UserPoolId: process.env.USER_POOL_ID,
+              Username: email
+            }));
+            await addToGroup(email, cognitoGroup);
+            await dynamo.send(new PutItemCommand({
+              TableName: process.env.USERS_TABLE,
+              Item: {
+                userId: { S: userId },
+                email: { S: email },
+                name: { S: name },
+                role: { S: role },
+                institute_id: { S: String(schoolId || "") }
+              }
+            }));
+            if (isSchoolSignup && schoolId) {
+              await dynamo.send(new PutItemCommand({
+                TableName: process.env.SCHOOLS_TABLE,
+                Item: {
+                  schoolId: { S: String(schoolId) },
+                  name: { S: String(body.school_name || body.schoolName || body.institute_name || body.instituteName || "DIYAA School") },
+                  type: { S: String(body.institute_type || body.instituteType || "") },
+                  registration_number: { S: String(body.registration_number || body.registrationNumber || "") },
+                  owner_email: { S: email },
+                  owner_name: { S: name },
+                  phone: { S: String(body.phone || body.owner_phone || body.ownerPhone || "") },
+                  city: { S: String(body.city || "") },
+                  country: { S: String(body.country || "") },
+                  address: { S: String(body.address || "") },
+                  grades_offered: { S: JSON.stringify(body.grades_offered || body.gradesOffered || []) },
+                  student_range: { S: String(body.student_range || body.studentRange || "") },
+                  teacher_range: { S: String(body.teacher_range || body.teacherRange || "") },
+                  plan_name: { S: String(body.plan_name || body.planName || "") },
+                  trial_days: { S: String(body.trial_days || body.trialDays || "") },
+                  billing_name: { S: String(body.billing_name || body.billingName || "") },
+                  billing_address: { S: String(body.billing_address || body.billingAddress || "") },
+                  payment_last4: { S: String(body.payment_last4 || body.paymentLast4 || "") },
+                  status: { S: "active" },
+                  created_at: { S: new Date().toISOString() }
+                }
+              }));
+            }
+            if (String(body.create_principal || body.createPrincipal || "").toLowerCase() === "yes" && body.principal_email) {
+              await dynamo.send(new PutItemCommand({
+                TableName: process.env.USERS_TABLE,
+                Item: {
+                  userId: { S: `principal-${crypto.randomUUID()}` },
+                  email: { S: String(body.principal_email) },
+                  name: { S: String(body.principal_name || "Principal") },
+                  phone: { S: String(body.principal_phone || "") },
+                  role: { S: "SchoolAdmin" },
+                  institute_id: { S: String(schoolId || "") },
+                  status: { S: "active" },
+                  created_at: { S: new Date().toISOString() }
+                }
+              }));
+            }
+            return json(200, {
+              success: true,
+              message: isSchoolSignup ? "Institute registered successfully" : "Signup successful",
+              user: { id: userId, email, name, role, institute_id: schoolId },
+              school: isSchoolSignup ? { id: schoolId, name: body.school_name || body.schoolName || body.institute_name || body.instituteName || "DIYAA School" } : null
+            });
+          }
+
+          function normalizeGroupName(role) {
+            const clean = String(role || "Student").replace(/\s+/g, "");
+            if (clean.toLowerCase() === "schooladmin") return "SchoolAdmin";
+            if (clean.toLowerCase() === "superadmin") return "SuperAdmin";
+            if (clean.toLowerCase() === "owner") return "SchoolAdmin";
+            return clean;
+          }
+
+          async function addToGroup(email, groupName) {
+            const allowed = new Set(["Student", "Teacher", "Parent", "SchoolAdmin", "SuperAdmin"]);
+            if (!allowed.has(groupName)) return;
+            await cognito.send(new AdminAddUserToGroupCommand({
+              UserPoolId: process.env.USER_POOL_ID,
+              Username: email,
+              GroupName: groupName
+            }));
+          }
+
+          exports.handler = async (event) => {
+            try {
+              const method = event.requestContext?.http?.method || event.httpMethod;
+              const path = cleanPath(event);
+              if (method === "OPTIONS") return json(200, { success: true });
+              if (method === "POST" && path === "/auth/login") return login(event);
+              if (method === "POST" && path === "/auth/signup") return signup(event);
+              if (method === "POST" && path === "/institute/register") return signup(event);
+              return json(404, { success: false, message: `Route not found: ${method} ${path}` });
+            } catch (error) {
+              console.error(error);
+              return json(401, { success: false, message: error.message || "Authentication failed" });
+            }
+          };
+
+  UserLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: user-lambda
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          SCHOOLS_TABLE: !Ref SchoolsTable
+      Code:
+        ZipFile: |
+          const { DynamoDBClient, GetItemCommand, ScanCommand } = require("@aws-sdk/client-dynamodb");
+          const dynamo = new DynamoDBClient({});
+          const json = (statusCode, body) => ({
+            statusCode,
+            headers: {
+              "content-type": "application/json",
+              "access-control-allow-origin": "*",
+              "access-control-allow-headers": "authorization,content-type",
+              "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS"
+            },
+            body: JSON.stringify(body)
+          });
+          const cleanPath = (event) => (event.rawPath || event.path || "/").replace(/^\/prod(?=\/|$)/, "") || "/";
+
+          function decodeJwt(token) {
+            if (!token) return {};
+            const payload = token.split(".")[1];
+            if (!payload) return {};
+            return JSON.parse(Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+          }
+
+          function getToken(event) {
+            const headers = event.headers || {};
+            const auth = headers.Authorization || headers.authorization || "";
+            return auth.replace(/^Bearer\s+/i, "");
+          }
+
+          function attr(item, key) {
+            const value = item?.[key];
+            if (!value) return null;
+            if (value.S != null) return value.S;
+            if (value.N != null) return Number(value.N);
+            if (value.BOOL != null) return value.BOOL;
+            return null;
+          }
+
+          function parseJson(value, fallback) {
+            try {
+              return value ? JSON.parse(value) : fallback;
+            } catch {
+              return fallback;
+            }
+          }
+
+          function pathInstituteId(path, prefix, suffix = "") {
+            const escapedPrefix = prefix.replace(/\//g, "\\/");
+            const escapedSuffix = suffix.replace(/\//g, "\\/");
+            const match = new RegExp(`^${escapedPrefix}\\/([^/]+)${escapedSuffix}$`).exec(path);
+            return match?.[1] || null;
+          }
+
+          async function getSchool(instituteId) {
+            if (!instituteId) return null;
+            const result = await dynamo.send(new GetItemCommand({
+              TableName: process.env.SCHOOLS_TABLE,
+              Key: { schoolId: { S: instituteId } }
+            }));
+            const item = result.Item;
+            if (!item) return {
+              id: instituteId,
+              school_id: instituteId,
+              name: "DIYAA School",
+              status: "active"
+            };
+            return {
+              id: attr(item, "schoolId"),
+              school_id: attr(item, "schoolId"),
+              name: attr(item, "name"),
+              type: attr(item, "type"),
+              registration_number: attr(item, "registration_number"),
+              city: attr(item, "city"),
+              country: attr(item, "country"),
+              address: attr(item, "address"),
+              owner_name: attr(item, "owner_name"),
+              owner_email: attr(item, "owner_email"),
+              owner_phone: attr(item, "phone"),
+              grades_offered: attr(item, "grades_offered"),
+              student_range: attr(item, "student_range"),
+              teacher_range: attr(item, "teacher_range"),
+              plan_name: attr(item, "plan_name"),
+              trial_days: attr(item, "trial_days"),
+              billing_name: attr(item, "billing_name"),
+              billing_address: attr(item, "billing_address"),
+              payment_last4: attr(item, "payment_last4"),
+              status: attr(item, "status") || "active",
+              created_at: attr(item, "created_at")
+            };
+          }
+
+          async function getActorInstituteId(event) {
+            const claims = decodeJwt(getToken(event));
+            if (claims["custom:institute_id"]) return claims["custom:institute_id"];
+            if (!claims.sub) return null;
+            const result = await dynamo.send(new GetItemCommand({
+              TableName: process.env.USERS_TABLE,
+              Key: { userId: { S: claims.sub } }
+            }));
+            return attr(result.Item, "institute_id");
+          }
+
+          async function listUsers(instituteId) {
+            const result = await dynamo.send(new ScanCommand({
+              TableName: process.env.USERS_TABLE,
+              FilterExpression: "institute_id = :instituteId",
+              ExpressionAttributeValues: { ":instituteId": { S: String(instituteId || "") } }
+            }));
+            return (result.Items || []).map((item) => ({
+              id: attr(item, "userId"),
+              user_id: attr(item, "userId"),
+              email: attr(item, "email"),
+              name: attr(item, "name"),
+              role: attr(item, "role") || "Student",
+              institute_id: attr(item, "institute_id"),
+              status: attr(item, "status") || "active",
+              phone: attr(item, "phone"),
+              branch: attr(item, "branch") || "Main Campus",
+              grade: attr(item, "grade"),
+              assigned_class: attr(item, "grade"),
+              assignClass: attr(item, "grade"),
+              subjects: parseJson(attr(item, "subjects"), []),
+              assigned_subject: parseJson(attr(item, "subjects"), [])[0] || attr(item, "subject"),
+              assignSubject: parseJson(attr(item, "subjects"), [])[0] || attr(item, "subject"),
+              last_active: "Never"
+            }));
+          }
+
+          function buildClasses(users, school) {
+            const grades = new Set(users.map((u) => u.grade).filter(Boolean));
+            for (const grade of parseJson(school?.grades_offered, [])) grades.add(grade);
+            return [...grades].map((grade, index) => {
+              const classUsers = users.filter((u) => u.grade === grade);
+              const teachers = classUsers.filter((u) => u.role === "Teacher").map((u) => u.name).filter(Boolean);
+              return {
+                id: index + 1,
+                grade,
+                section: "A",
+                branch: "Main Campus",
+                student_count: classUsers.filter((u) => u.role === "Student").length,
+                teachers
+              };
+            });
+          }
+
+          async function dashboard(instituteId) {
+            const school = await getSchool(instituteId);
+            const users = await listUsers(instituteId);
+            const classes = buildClasses(users, school);
+            const totalStudents = users.filter((u) => u.role === "Student").length;
+            const totalTeachers = users.filter((u) => u.role === "Teacher").length;
+            const branches = new Set(classes.map((c) => c.branch).filter(Boolean));
+            const grades = new Set(classes.map((c) => c.grade).filter(Boolean));
+            const planName = school?.plan_name || "Premium Plan";
+            return json(200, {
+              institute: school,
+              overview: {
+                total_students: totalStudents,
+                total_teachers: totalTeachers,
+                active_today: 0,
+                weekly_engagement_percent: 0,
+                students_change_text: "+0 this month",
+                teachers_change_text: `${classes.length} active classes`,
+                active_today_text: "0% of school",
+                engagement_change_text: "+0% vs last week"
+              },
+              users,
+              structure_summary: {
+                branches: branches.size || 1,
+                grades: grades.size,
+                classes: classes.length
+              },
+              class_structure: classes.map((c) => ({
+                grade: c.grade,
+                classes: [c.section],
+                students: c.student_count,
+                teachers: c.teachers,
+                branch: c.branch
+              })),
+              subscription: {
+                plan_name: planName,
+                trial_days: Number(school?.trial_days || 0),
+                billing_name: school?.billing_name || school?.owner_name || null,
+                billing_address: school?.billing_address || school?.address || null,
+                payment_last4: school?.payment_last4 || null,
+                has_payment_method: Boolean(school?.payment_last4)
+              },
+              billing_history: [],
+              content_library: [],
+              daily_activity: [],
+              subject_performance: [],
+              engagement_insights: []
+            });
+          }
+
+          async function teachers(instituteId) {
+            const users = (await listUsers(instituteId)).filter((u) => u.role === "Teacher");
+            return json(200, { institute_id: instituteId, total: users.length, teachers: users });
+          }
+
+          async function students(instituteId) {
+            const users = (await listUsers(instituteId)).filter((u) => u.role === "Student");
+            return json(200, { institute_id: instituteId, total: users.length, students: users });
+          }
+
+          async function classes(instituteId) {
+            const school = await getSchool(instituteId);
+            const users = await listUsers(instituteId);
+            const rows = buildClasses(users, school);
+            return json(200, { success: true, data: { classes: rows }, institute_id: instituteId, total: rows.length, classes: rows });
+          }
+
+          exports.handler = async (event) => {
+            try {
+              const path = cleanPath(event);
+              const method = event.requestContext?.http?.method || event.httpMethod;
+              if (method === "OPTIONS") return json(200, { success: true });
+              const tokenInstituteId = await getActorInstituteId(event);
+              const dashboardId = pathInstituteId(path, "/institute/dashboard");
+              if (method === "GET" && dashboardId) return dashboard(dashboardId);
+              if (method === "GET" && path === "/institute/me/teachers") return teachers(tokenInstituteId);
+              if (method === "GET" && path === "/institute/me/students") return students(tokenInstituteId);
+              const classesId = pathInstituteId(path, "/institute", "/classes");
+              if (method === "GET" && classesId) return classes(classesId);
+              if (path === "/teacher/reports") {
+                return json(200, { success: true, reports: [], total: 0 });
+              }
+              return json(404, { success: false, message: `Route not found: ${path}` });
+            } catch (error) {
+              console.error(error);
+              return json(500, { success: false, message: error.message || "Server error" });
+            }
+          };
+
+  GameLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: game-lambda
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          GAMES_TABLE: !Ref GamesTable
+          SCORES_TABLE: !Ref ScoresXPTable
+      Code:
+        ZipFile: |
+          const { DynamoDBClient, PutItemCommand } = require("@aws-sdk/client-dynamodb");
+          const dynamo = new DynamoDBClient({});
+          const json = (statusCode, body) => ({
+            statusCode,
+            headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
+            body: JSON.stringify(body)
+          });
+          const cleanPath = (event) => (event.rawPath || event.path || "/").replace(/^\/prod(?=\/|$)/, "") || "/";
+          const parseBody = (event) => event.body ? JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, "base64").toString("utf8") : event.body) : {};
+          exports.handler = async (event) => {
+            try {
+              if (cleanPath(event) !== "/game/submit-score") return json(404, { success: false, message: "Route not found" });
+              const body = parseBody(event);
+              const studentId = String(body.studentId || body.student_id || "anonymous");
+              const scoreId = String(body.scoreId || body.score_id || Date.now());
+              await dynamo.send(new PutItemCommand({
+                TableName: process.env.SCORES_TABLE,
+                Item: {
+                  studentId: { S: studentId },
+                  scoreId: { S: scoreId },
+                  gameId: { S: String(body.gameId || body.game_id || "") },
+                  score: { N: String(body.score || 0) },
+                  xp: { N: String(body.xp || 0) },
+                  created_at: { S: new Date().toISOString() }
+                }
+              }));
+              return json(200, { success: true, message: "Score submitted", score_id: scoreId });
+            } catch (error) {
+              console.error(error);
+              return json(500, { success: false, message: error.message || "Server error" });
+            }
+          };
+
+  ProgressLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: progress-lambda
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          PROGRESS_TABLE: !Ref StudentProgressTable
+      Code:
+        ZipFile: |
+          const { DynamoDBClient, QueryCommand } = require("@aws-sdk/client-dynamodb");
+          const dynamo = new DynamoDBClient({});
+          const json = (statusCode, body) => ({
+            statusCode,
+            headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
+            body: JSON.stringify(body)
+          });
+          const cleanPath = (event) => (event.rawPath || event.path || "/").replace(/^\/prod(?=\/|$)/, "") || "/";
+          exports.handler = async (event) => {
+            try {
+              if (cleanPath(event) !== "/student/progress") return json(404, { success: false, message: "Route not found" });
+              const studentId = event.queryStringParameters?.studentId || event.queryStringParameters?.student_id;
+              if (!studentId) return json(200, { success: true, progress: [], total: 0 });
+              const result = await dynamo.send(new QueryCommand({
+                TableName: process.env.PROGRESS_TABLE,
+                KeyConditionExpression: "studentId = :studentId",
+                ExpressionAttributeValues: { ":studentId": { S: studentId } }
+              }));
+              const progress = (result.Items || []).map((item) => ({
+                studentId: item.studentId?.S,
+                subjectId: item.subjectId?.S,
+                level: Number(item.level?.N || 0),
+                xp: Number(item.xp?.N || 0)
+              }));
+              return json(200, { success: true, progress, total: progress.length });
+            } catch (error) {
+              console.error(error);
+              return json(500, { success: false, message: error.message || "Server error" });
+            }
+          };
+
+  AdminLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: admin-lambda
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+      Code:
+        ZipFile: |
+          const { DynamoDBClient, ScanCommand } = require("@aws-sdk/client-dynamodb");
+          const dynamo = new DynamoDBClient({});
+          const json = (statusCode, body) => ({
+            statusCode,
+            headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
+            body: JSON.stringify(body)
+          });
+          const cleanPath = (event) => (event.rawPath || event.path || "/").replace(/^\/prod(?=\/|$)/, "") || "/";
+          exports.handler = async (event) => {
+            try {
+              if (cleanPath(event) !== "/admin/users") return json(404, { success: false, message: "Route not found" });
+              const result = await dynamo.send(new ScanCommand({ TableName: process.env.USERS_TABLE }));
+              const users = (result.Items || []).map((item) => ({
+                id: item.userId?.S,
+                email: item.email?.S,
+                name: item.name?.S,
+                role: item.role?.S,
+                institute_id: item.institute_id?.S || null
+              }));
+              return json(200, { success: true, users, total: users.length });
+            } catch (error) {
+              console.error(error);
+              return json(500, { success: false, message: error.message || "Server error" });
+            }
+          };
+
+  DiyaaRestApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: diyaa-backend-api
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - GET
+          - POST
+          - PATCH
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - authorization
+          - content-type
+
+  AuthIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt AuthLambda.Arn
+      PayloadFormatVersion: '2.0'
+
+  UserIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt UserLambda.Arn
+      PayloadFormatVersion: '2.0'
+
+  GameIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt GameLambda.Arn
+      PayloadFormatVersion: '2.0'
+
+  ProgressIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ProgressLambda.Arn
+      PayloadFormatVersion: '2.0'
+
+  AdminIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt AdminLambda.Arn
+      PayloadFormatVersion: '2.0'
+
+  LoginRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: POST /auth/login
+      Target: !Sub integrations/${AuthIntegration}
+
+  SignupRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: POST /auth/signup
+      Target: !Sub integrations/${AuthIntegration}
+
+  InstituteRegisterRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: POST /institute/register
+      Target: !Sub integrations/${AuthIntegration}
+
+  StudentProgressRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: GET /student/progress
+      Target: !Sub integrations/${ProgressIntegration}
+
+  SubmitScoreRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: POST /game/submit-score
+      Target: !Sub integrations/${GameIntegration}
+
+  TeacherReportsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: GET /teacher/reports
+      Target: !Sub integrations/${UserIntegration}
+
+  InstituteDashboardRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: GET /institute/dashboard/{instituteId}
+      Target: !Sub integrations/${UserIntegration}
+
+  InstituteMeTeachersRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: GET /institute/me/teachers
+      Target: !Sub integrations/${UserIntegration}
+
+  InstituteMeStudentsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: GET /institute/me/students
+      Target: !Sub integrations/${UserIntegration}
+
+  InstituteClassesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: GET /institute/{instituteId}/classes
+      Target: !Sub integrations/${UserIntegration}
+
+  AdminUsersRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      RouteKey: GET /admin/users
+      Target: !Sub integrations/${AdminIntegration}
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref DiyaaRestApi
+      StageName: !Ref StageName
+      AutoDeploy: true
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
+
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/apigateway/diyaa-backend-api
+      RetentionInDays: 14
+
+  AuthLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AuthLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiyaaRestApi}/*/*/*
+
+  UserLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref UserLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiyaaRestApi}/*/*/*
+
+  GameLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GameLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiyaaRestApi}/*/*/*
+
+  ProgressLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ProgressLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiyaaRestApi}/*/*/*
+
+  AdminLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AdminLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiyaaRestApi}/*/*/*
+
+Outputs:
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref DiyaaUsersPool
+  CognitoClientId:
+    Description: Cognito App Client ID
+    Value: !Ref DiyaaUsersClient
+  ApiGatewayBaseUrl:
+    Description: API Gateway Base URL
+    Value: !Sub https://${DiyaaRestApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
+  DynamoDBTableNames:
+    Description: DynamoDB table names
+    Value: !Join
+      - ','
+      - - !Ref UsersTable
+        - !Ref SchoolsTable
+        - !Ref SubjectsTable
+        - !Ref GamesTable
+        - !Ref ScoresXPTable
+        - !Ref StudentProgressTable

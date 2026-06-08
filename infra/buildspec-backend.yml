@@ -1,0 +1,30 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo Installing all npm dependencies...
+      - npm ci
+  pre_build:
+    commands:
+      - echo Verifying target environment parameters...
+      - echo "Pipeline S3 Bucket: $PIPELINE_BUCKET_NAME"
+  build:
+    commands:
+      - echo Compiling TypeScript to JavaScript...
+      - npm run build
+      - echo Pruning devDependencies to minimize Lambda package size...
+      # Removes devDependencies from node_modules, keeping it lightweight
+      - npm prune --production
+  post_build:
+    commands:
+      - echo Compiling zipped Lambda deployment bundle...
+      # Packages dist/ and production node_modules/ into a deployable zip file
+      - zip -r diyaa-backend.zip dist node_modules package.json
+      - echo Uploading deployment bundle to S3...
+      - aws s3 cp diyaa-backend.zip s3://$PIPELINE_BUCKET_NAME/diyaa-backend.zip
+      - echo Updating Lambda function code dynamically...
+      - aws lambda update-function-code --function-name diyaa-backend-prod-function --s3-bucket $PIPELINE_BUCKET_NAME --s3-key diyaa-backend.zip
+      - echo Backend Lambda deployment completed successfully!

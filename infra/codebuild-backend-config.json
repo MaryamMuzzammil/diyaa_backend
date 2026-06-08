@@ -1,0 +1,23 @@
+{
+  "name": "diyaa-backend-build",
+  "source": {
+    "type": "CODEPIPELINE",
+    "buildspec": "infra/buildspec-backend.yml"
+  },
+  "artifacts": {
+    "type": "CODEPIPELINE"
+  },
+  "environment": {
+    "type": "LINUX_CONTAINER",
+    "image": "aws/codebuild/standard:7.0",
+    "computeType": "BUILD_GENERAL1_SMALL",
+    "environmentVariables": [
+      {
+        "name": "PIPELINE_BUCKET_NAME",
+        "value": "${PIPELINE_BUCKET_NAME}",
+        "type": "PLAINTEXT"
+      }
+    ]
+  },
+  "serviceRole": "arn:aws:iam::932453197807:role/diyaa-codebuild-service-role"
+}

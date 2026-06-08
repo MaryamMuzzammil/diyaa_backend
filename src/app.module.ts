@@ -36,7 +36,7 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
         const isProd = config.get<string>('NODE_ENV') === 'production';
         const syncExplicit = config.get<string>('TYPEORM_SYNC');
         const synchronize = isProd
-          ? false
+          ? syncExplicit === 'true'
           : syncExplicit !== 'false' && syncExplicit !== '0';
 
         const portRaw = config.get<string>('DB_PORT', '5432');

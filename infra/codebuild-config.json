@@ -1,0 +1,28 @@
+{
+  "name": "diyaa-frontend-build",
+  "source": {
+    "type": "CODEPIPELINE",
+    "buildspec": "infra/buildspec.yml"
+  },
+  "artifacts": {
+    "type": "CODEPIPELINE"
+  },
+  "environment": {
+    "type": "LINUX_CONTAINER",
+    "image": "aws/codebuild/standard:7.0",
+    "computeType": "BUILD_GENERAL1_SMALL",
+    "environmentVariables": [
+      {
+        "name": "S3_BUCKET_NAME",
+        "value": "${S3_BUCKET_NAME}",
+        "type": "PLAINTEXT"
+      },
+      {
+        "name": "CLOUDFRONT_DISTRIBUTION_ID",
+        "value": "${CLOUDFRONT_DISTRIBUTION_ID}",
+        "type": "PLAINTEXT"
+      }
+    ]
+  },
+  "serviceRole": "arn:aws:iam::932453197807:role/diyaa-codebuild-service-role"
+}

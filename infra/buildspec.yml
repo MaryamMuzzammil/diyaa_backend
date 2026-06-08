@@ -1,0 +1,32 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo Installing dependencies...
+      # Use npm ci for clean, deterministic builds based on package-lock.json
+      - npm ci
+  pre_build:
+    commands:
+      - echo Checking environment variables...
+      # Ensure mandatory environment variables are defined in the CodeBuild project settings.
+      # E.g. REACT_APP_API_URL or VITE_API_URL
+      - echo "Target S3 Bucket: $S3_BUCKET_NAME"
+      - echo "Target CloudFront Distribution: $CLOUDFRONT_DISTRIBUTION_ID"
+  build:
+    commands:
+      - echo Building React application...
+      # Any environment variables configured in CodeBuild starting with REACT_APP_ or VITE_
+      # will be automatically picked up by the build process.
+      - npm run build
+  post_build:
+    commands:
+      - echo Build complete. Deploying to S3...
+      # Synchronize output folder to S3 bucket and delete removed files
+      - aws s3 sync build/ s3://$S3_BUCKET_NAME --delete
+      - echo Deploy complete. Creating CloudFront cache invalidation...
+      # Invalidate all files in CloudFront cache so clients immediately see updates
+      - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
+      - echo Invalidation request created successfully!

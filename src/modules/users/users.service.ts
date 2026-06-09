@@ -10,6 +10,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcrypt';
 import { Institute } from '../institute/institute.entity';
 import { assertInstituteIdForRole } from './users-institute.util';
+import { CognitoAuthService } from '../auth/cognito-auth.service';
 
 @Injectable()
 export class UsersService {
@@ -18,6 +19,7 @@ export class UsersService {
     private repo: Repository<User>,
     @InjectRepository(Institute)
     private instituteRepo: Repository<Institute>,
+    private cognitoAuth: CognitoAuthService,
   ) {}
   pick<T extends Record<string, unknown>>(
     data: T,
@@ -150,6 +152,20 @@ export class UsersService {
     });
 
     const saved = await this.repo.save(user);
+
+    if (this.cognitoAuth.isEnabled()) {
+      try {
+        await this.cognitoAuth.registerUser({
+          email: saved.email,
+          password: dto.password,
+          name: saved.name,
+          role: saved.role,
+        });
+      } catch {
+        // PostgreSQL account remains valid; legacy JWT login still works.
+      }
+    }
+
     return {
       message: 'Account created successfully',
       user: this.toPublicUser(saved),

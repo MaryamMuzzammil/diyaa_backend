@@ -7,7 +7,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UserRole } from '../modules/users/users.entity';
@@ -18,21 +18,21 @@ export class RolePermissionController {
   constructor(private service: RolePermissionService) {}
 
   @Post()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN)
   create(@Body() body: Record<string, unknown>) {
     return this.service.create(body);
   }
 
   @Get()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
   findAll() {
     return this.service.findAll();
   }
 
   @Delete(':id')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN)
   remove(@Param('id') id: string) {
     return this.service.remove(Number(id));

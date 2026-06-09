@@ -8,7 +8,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { UserRole } from '../users/users.entity';
 import { ParentResponseInterceptor } from './interceptors/parent-response.interceptor';
 import { ParentDashboardService } from './parent-dashboard.service';
@@ -16,7 +16,7 @@ import { ParentDashboardService } from './parent-dashboard.service';
 type JwtActor = { sub: number; email: string; role: UserRole };
 
 @Controller('parent')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtAuthGuard)
 @UseInterceptors(ParentResponseInterceptor)
 export class ParentController {
   constructor(private dashboard: ParentDashboardService) {}

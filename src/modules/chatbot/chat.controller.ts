@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ChatActorService } from './chat-actor.service';
 import { ChatService } from './chat.service';
 import { SendChatDto } from './dto/send-chat.dto';
@@ -7,7 +7,7 @@ import { SendChatDto } from './dto/send-chat.dto';
 type JwtActor = { sub: number; email: string; role: string };
 
 @Controller('chat')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtAuthGuard)
 export class ChatController {
   constructor(
     private chatService: ChatService,

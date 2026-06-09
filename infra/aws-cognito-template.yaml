@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DIYAA Cognito User Pool for SPA authentication (preserves existing API routes).
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: diyaa
+  Stage:
+    Type: String
+    Default: prod
+  FrontendUrl:
+    Type: String
+    Default: https://d2459vrsbb1r8w.cloudfront.net
+
+Resources:
+  DiyaaUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${ProjectName}-${Stage}-users'
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 6
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+
+  DiyaaUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${ProjectName}-${Stage}-spa-client'
+      UserPoolId: !Ref DiyaaUserPool
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - !Ref FrontendUrl
+        - http://localhost:5173
+      LogoutURLs:
+        - !Sub '${FrontendUrl}/login'
+        - http://localhost:5173/login
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+
+  DiyaaUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub '${ProjectName}-${Stage}-auth-${AWS::AccountId}'
+      UserPoolId: !Ref DiyaaUserPool
+
+  StudentGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Student
+      UserPoolId: !Ref DiyaaUserPool
+
+  TeacherGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Teacher
+      UserPoolId: !Ref DiyaaUserPool
+
+  ParentGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Parent
+      UserPoolId: !Ref DiyaaUserPool
+
+  SchoolAdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: SchoolAdmin
+      UserPoolId: !Ref DiyaaUserPool
+
+  SuperAdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: SuperAdmin
+      UserPoolId: !Ref DiyaaUserPool
+
+  DiyaaLambdaCognitoPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-${Stage}-cognito-access'
+      Roles:
+        - diyaa-backend-prod-lambda-role
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - cognito-idp:AdminCreateUser
+              - cognito-idp:AdminSetUserPassword
+              - cognito-idp:AdminConfirmSignUp
+              - cognito-idp:AdminAddUserToGroup
+              - cognito-idp:AdminGetUser
+              - cognito-idp:InitiateAuth
+              - cognito-idp:SignUp
+            Resource: !GetAtt DiyaaUserPool.Arn
+
+Outputs:
+  UserPoolId:
+    Value: !Ref DiyaaUserPool
+  UserPoolArn:
+    Value: !GetAtt DiyaaUserPool.Arn
+  UserPoolClientId:
+    Value: !Ref DiyaaUserPoolClient
+  CognitoIssuer:
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${DiyaaUserPool}'
+  HostedUiUrl:
+    Value: !Sub 'https://${DiyaaUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+  JwksUri:
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${DiyaaUserPool}/.well-known/jwks.json'

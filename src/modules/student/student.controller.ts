@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { UserRole } from '../users/users.entity';
 import { CompleteGameDto } from './dto/complete-game.dto';
 import { StudentDashboardService } from './student-dashboard.service';
@@ -8,7 +8,7 @@ import { StudentProgressService } from './student-progress.service';
 type JwtActor = { sub: number; email: string; role: UserRole };
 
 @Controller('student')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtAuthGuard)
 export class StudentController {
   constructor(
     private dashboardService: StudentDashboardService,

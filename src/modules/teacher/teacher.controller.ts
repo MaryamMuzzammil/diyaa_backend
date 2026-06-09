@@ -11,7 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { UserRole } from '../users/users.entity';
 import { AwardRewardDto } from './dto/award-reward.dto';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
@@ -28,7 +28,7 @@ import { TeacherScopeService } from './teacher-scope.service';
 type JwtActor = { sub: number; email: string; role: UserRole };
 
 @Controller('teacher')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtAuthGuard)
 @UseInterceptors(TeacherResponseInterceptor)
 export class TeacherController {
   constructor(

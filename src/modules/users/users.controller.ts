@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -24,14 +24,14 @@ export class UsersController {
   }
 
   @Get()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
   findAll() {
     return this.usersService.findAll();
   }
 
   @Get('me')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   async getProfile(@Request() req: { user: { sub: number } }) {
     const user = await this.usersService.findById(req.user.sub);
     if (!user) {

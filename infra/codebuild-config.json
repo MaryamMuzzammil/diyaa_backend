@@ -21,6 +21,16 @@
         "name": "CLOUDFRONT_DISTRIBUTION_ID",
         "value": "${CLOUDFRONT_DISTRIBUTION_ID}",
         "type": "PLAINTEXT"
+      },
+      {
+        "name": "VITE_API_URL",
+        "value": "${VITE_API_URL}",
+        "type": "PLAINTEXT"
+      },
+      {
+        "name": "VITE_GAMES_URL",
+        "value": "${VITE_GAMES_URL}",
+        "type": "PLAINTEXT"
       }
     ]
   },

@@ -10,7 +10,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Throttle } from '@nestjs/throttler';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -59,21 +59,21 @@ export class InstituteController {
   }
 
   @Get('all/details')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
   findAllWithDetails(@Request() req: { user: JwtActor }) {
     return this.instituteService.findAllWithDetails(req.user);
   }
 
   @Get('dashboard/:id')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   getDashboard(@Param('id', ParseIntPipe) id: number, @Request() req: { user: JwtActor }) {
     return this.dashboardService.getDashboard(id, req.user);
   }
 
   /** Free students — no institute_id (platform / B2C). */
   @Get('students/free')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.SUPERADMIN)
   async listFreeStudents() {
     const students = await this.studentService.findFree();
@@ -82,7 +82,7 @@ export class InstituteController {
 
   /** Owner / Sub Admin — auto institute from login (recommended). */
   @Get('me/students')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   async listMyStudents(@Request() req: { user: JwtActor }) {
     const instituteId = await this.access.resolveActorInstituteId(req.user);
     const institute = await this.access.getInstituteOrFail(instituteId);
@@ -92,7 +92,7 @@ export class InstituteController {
   }
 
   @Get('me/teachers')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   async listMyTeachers(@Request() req: { user: JwtActor }) {
     const instituteId = await this.access.resolveActorInstituteId(req.user);
     const institute = await this.access.getInstituteOrFail(instituteId);
@@ -102,7 +102,7 @@ export class InstituteController {
   }
 
   @Get('me/parents')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   async listMyParents(@Request() req: { user: JwtActor }) {
     const instituteId = await this.access.resolveActorInstituteId(req.user);
     const institute = await this.access.getInstituteOrFail(instituteId);
@@ -112,7 +112,7 @@ export class InstituteController {
   }
 
   @Get(':instituteId/students')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   async listStudents(
     @Param('instituteId', ParseIntPipe) instituteId: number,
     @Request() req: { user: JwtActor },
@@ -124,7 +124,7 @@ export class InstituteController {
   }
 
   @Get(':instituteId/teachers')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   async listTeachers(
     @Param('instituteId', ParseIntPipe) instituteId: number,
     @Request() req: { user: JwtActor },
@@ -136,7 +136,7 @@ export class InstituteController {
   }
 
   @Get(':instituteId/teachers/:teacherId/assigned-classes')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   getTeacherAssignedClasses(
     @Param('instituteId', ParseIntPipe) instituteId: number,
     @Param('teacherId', ParseIntPipe) teacherId: number,
@@ -150,7 +150,7 @@ export class InstituteController {
   }
 
   @Get(':instituteId/classes')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   listClasses(
     @Param('instituteId', ParseIntPipe) instituteId: number,
     @Request() req: { user: JwtActor },
@@ -159,7 +159,7 @@ export class InstituteController {
   }
 
   @Get(':instituteId/classes/:grade/:className/assignments')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   getClassAssignments(
     @Param('instituteId', ParseIntPipe) instituteId: number,
     @Param('grade') grade: string,
@@ -175,7 +175,7 @@ export class InstituteController {
   }
 
   @Post(':instituteId/classes/:grade/:className/subject-teachers')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   assignSubjectTeachersByClass(
     @Param('instituteId', ParseIntPipe) instituteId: number,
     @Param('grade') grade: string,
@@ -200,7 +200,7 @@ export class InstituteController {
   }
 
   @Post(':instituteId/classes/:grade/:className/students')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   assignStudentsByClass(
     @Param('instituteId', ParseIntPipe) instituteId: number,
     @Param('grade') grade: string,
@@ -218,7 +218,7 @@ export class InstituteController {
   }
 
   @Get(':instituteId/parents')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   async listParents(
     @Param('instituteId', ParseIntPipe) instituteId: number,
     @Request() req: { user: JwtActor },
@@ -230,31 +230,31 @@ export class InstituteController {
   }
 
   @Get('register/:id')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   findRegistration(@Param('id', ParseIntPipe) id: number, @Request() req: { user: JwtActor }) {
     return this.instituteService.findRegistrationById(id, req.user);
   }
 
   @Delete('register/:id')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   deleteRegistration(@Param('id', ParseIntPipe) id: number, @Request() req: { user: JwtActor }) {
     return this.instituteService.deleteRegistration(id, req.user);
   }
 
   @Get('permissions/catalog')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   getPermissionsCatalog() {
     return this.permissionsService.getCatalog();
   }
 
   @Get('permissions/roles/:role')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   getRolePermissionDefaults(@Param('role') role: string) {
     return this.permissionsService.getRoleDefaults(role);
   }
 
   @Get('users/:userId/permissions')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   async getUserPermissions(
     @Param('userId', ParseIntPipe) userId: number,
     @Request() req: { user: JwtActor },
@@ -264,7 +264,7 @@ export class InstituteController {
   }
 
   @Patch('users/:userId/permissions')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   setUserPermissions(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() body: SetUserPermissionsDto,
@@ -274,13 +274,13 @@ export class InstituteController {
   }
 
   @Post('users')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   createUser(@Body() body: CreateInstituteUserDto, @Request() req: { user: JwtActor }) {
     return this.dashboardService.createUser(body, req.user);
   }
 
   @Patch('users/:userId')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   updateUser(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() body: UpdateInstituteUserDto,
@@ -290,7 +290,7 @@ export class InstituteController {
   }
 
   @Patch('users/:userId/status')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   updateUserStatus(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() body: UpdateUserStatusDto,
@@ -300,7 +300,7 @@ export class InstituteController {
   }
 
   @Patch('users/:userId/role')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   updateUserRole(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() body: UpdateUserRoleDto,
@@ -310,13 +310,13 @@ export class InstituteController {
   }
 
   @Delete('users/:userId')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   deleteUser(@Param('userId', ParseIntPipe) userId: number, @Request() req: { user: JwtActor }) {
     return this.dashboardService.deleteUser(userId, req.user);
   }
 
   @Post('classes/:classId/assign-teacher')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   assignTeacher(
     @Param('classId', ParseIntPipe) classId: number,
     @Body() body: AssignTeacherDto,
@@ -326,7 +326,7 @@ export class InstituteController {
   }
 
   @Post('classes/:classId/assign-students')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   assignStudents(
     @Param('classId', ParseIntPipe) classId: number,
     @Body() body: AssignStudentsDto,
@@ -336,7 +336,7 @@ export class InstituteController {
   }
 
   @Post('parents/:parentId/students')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   async linkParentStudents(
     @Param('parentId', ParseIntPipe) parentId: number,
     @Body() body: { student_ids?: number[]; child_ids?: number[] },
@@ -354,7 +354,7 @@ export class InstituteController {
   }
 
   @Post('content/:contentId/assign')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   assignContent(
     @Param('contentId', ParseIntPipe) contentId: number,
     @Body() body: AssignContentDto,
@@ -364,7 +364,7 @@ export class InstituteController {
   }
 
   @Get()
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   findAll(@Request() req: { user: JwtActor }) {
     return this.instituteService.findAllForActor(req.user);
   }

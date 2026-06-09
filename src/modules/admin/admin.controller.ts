@@ -12,7 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { InstituteService } from '../institute/institute.service';
@@ -30,7 +30,7 @@ import { AdminUsersService } from './services/admin-users.service';
 type JwtActor = { sub: number; email: string; role: UserRole };
 
 @Controller('admin')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.SUPERADMIN)
 @UseInterceptors(AdminResponseInterceptor)
 export class AdminController {

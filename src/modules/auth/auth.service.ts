@@ -12,6 +12,7 @@ import { UsersService } from '../users/users.service';
 import { UserRole } from '../users/users.entity';
 import { InstitutePermissionsService } from '../institute/institute-permissions.service';
 import { LoginDto } from './dto/login.dto';
+import { CognitoAuthService } from './cognito-auth.service';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +20,7 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private permissionsService: InstitutePermissionsService,
+    private cognitoAuth: CognitoAuthService,
     @InjectRepository(Institute)
     private instituteRepo: Repository<Institute>,
   ) {}
@@ -31,13 +33,32 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email');
     }
 
-    const isMatch = await bcrypt.compare(
-      data.password,
-      user.password_hash,
-    );
+    let accessToken: string | undefined;
 
-    if (!isMatch) {
-      throw new UnauthorizedException('Invalid password');
+    if (this.cognitoAuth.isEnabled()) {
+      try {
+        const cognitoTokens = await this.cognitoAuth.authenticate(
+          email,
+          data.password,
+        );
+        accessToken = cognitoTokens.idToken;
+      } catch {
+        const isMatch = await bcrypt.compare(
+          data.password,
+          user.password_hash,
+        );
+        if (!isMatch) {
+          throw new UnauthorizedException('Invalid password');
+        }
+      }
+    } else {
+      const isMatch = await bcrypt.compare(
+        data.password,
+        user.password_hash,
+      );
+      if (!isMatch) {
+        throw new UnauthorizedException('Invalid password');
+      }
     }
 
     if (user.status === 'suspended') {
@@ -67,7 +88,7 @@ export class AuthService {
       await this.permissionsService.getUserPermissions(user.user_id);
 
     return {
-      access_token: this.jwtService.sign(payload),
+      access_token: accessToken ?? this.jwtService.sign(payload),
       user: this.usersService.toPublicUser(user),
       permissions: permPayload.permissions,
       permissions_by_module: permPayload.permissions_by_module,

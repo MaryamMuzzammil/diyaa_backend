@@ -41,9 +41,14 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
 
         const portRaw = config.get<string>('DB_PORT', '5432');
         const port = Number(portRaw);
+        const dbHost = config.get<string>('DB_HOST', 'localhost');
+        const useSsl =
+          config.get<string>('DB_SSL') === 'true' ||
+          dbHost.includes('rds.amazonaws.com');
+
         return {
           type: 'postgres' as const,
-          host: config.get<string>('DB_HOST', 'localhost'),
+          host: dbHost,
           port: Number.isFinite(port) ? port : 5432,
           username: config.get<string>('DB_USERNAME'),
           password: config.get<string>('DB_PASSWORD'),
@@ -51,6 +56,7 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
           autoLoadEntities: true,
           synchronize,
           logging: isProd ? (['error', 'warn'] as const) : false,
+          ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
         };
       },
     }),

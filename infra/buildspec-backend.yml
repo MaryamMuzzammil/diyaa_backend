@@ -9,8 +9,8 @@ phases:
       - npm ci
   pre_build:
     commands:
-      - echo Verifying target environment parameters...
-      - echo "Pipeline S3 Bucket: $PIPELINE_BUCKET_NAME"
+      - echo Verifying target environment parameters
+      - echo Pipeline bucket $PIPELINE_BUCKET_NAME
   build:
     commands:
       - echo Compiling TypeScript to JavaScript...

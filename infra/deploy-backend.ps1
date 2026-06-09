@@ -1,3 +1,9 @@
+param(
+    [string]$BranchName = "main",
+    [string]$GitHubRepoFullName = "MaryamMuzzammil/diyaa_backend",
+    [string]$CorsOrigins = "https://d2459vrsbb1r8w.cloudfront.net"
+)
+
 # deploy-backend.ps1
 # Deploy React Backend Serverless Infrastructure to AWS
 # Account ID: 932453197807
@@ -9,12 +15,14 @@ $ProjectName = "diyaa-backend"
 $Stage = "prod"
 
 $PipelineBucketName = "diyaa-pipeline-artifacts-$AccountID"
-$BranchName = "main"
 
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host "Deploying DIYAA Backend Infrastructure to AWS Serverless" -ForegroundColor Cyan
 Write-Host "Target Account: $AccountID"
 Write-Host "Target Region: $Region"
+Write-Host "GitHub Repo: $GitHubRepoFullName"
+Write-Host "GitHub Branch: $BranchName"
+Write-Host "CORS Origins: $CorsOrigins"
 Write-Host "==================================================" -ForegroundColor Cyan
 
 # Ensure script runs from its directory
@@ -34,14 +42,45 @@ aws s3api put-public-access-block --bucket $PipelineBucketName --public-access-b
 aws s3api put-bucket-versioning --bucket $PipelineBucketName --versioning-configuration Status=Enabled
 Write-Host "Pipeline S3 Bucket setup completed." -ForegroundColor Green
 
-# 2. Deploy CloudFormation Stack (RDS, Secrets, Lambda, API Gateway)
-Write-Host "Step 2: Deploying CloudFormation Stack (Provisions RDS PostgreSQL, Lambda, and API Gateway. This may take 5-10 minutes)..." -ForegroundColor Yellow
+# 2. Ensure IAM roles exist for CodeBuild and CodePipeline
+Write-Host "Step 2: Ensuring IAM roles exist..." -ForegroundColor Yellow
+$codebuildRoleName = "diyaa-codebuild-service-role"
+$codepipelineRoleName = "diyaa-pipeline-service-role"
+
+$codebuildRole = aws iam get-role --role-name $codebuildRoleName 2>&1
+if ($codebuildRole -match "NoSuchEntity" -or $codebuildRole -match "not found") {
+    aws iam create-role `
+      --role-name $codebuildRoleName `
+      --assume-role-policy-document "file://$((Join-Path $ScriptDir "codebuild-trust-policy.json").Replace('\', '/'))"
+    Write-Host "Created IAM role: $codebuildRoleName" -ForegroundColor Green
+} else {
+    Write-Host "IAM role already exists: $codebuildRoleName" -ForegroundColor Blue
+}
+
+$codepipelineRole = aws iam get-role --role-name $codepipelineRoleName 2>&1
+if ($codepipelineRole -match "NoSuchEntity" -or $codepipelineRole -match "not found") {
+    aws iam create-role `
+      --role-name $codepipelineRoleName `
+      --assume-role-policy-document "file://$((Join-Path $ScriptDir "codepipeline-trust-policy.json").Replace('\', '/'))"
+    Write-Host "Created IAM role: $codepipelineRoleName" -ForegroundColor Green
+} else {
+    Write-Host "IAM role already exists: $codepipelineRoleName" -ForegroundColor Blue
+}
+
+aws iam put-role-policy `
+  --role-name $codepipelineRoleName `
+  --policy-name "diyaa-codepipeline-backend-policy" `
+  --policy-document "file://$((Join-Path $ScriptDir "codepipeline-policy.json").Replace('\', '/'))"
+Write-Host "CodePipeline IAM policy configured." -ForegroundColor Green
+
+# 3. Deploy CloudFormation Stack (RDS, Secrets, Lambda, API Gateway)
+Write-Host "Step 3: Deploying CloudFormation Stack (Provisions RDS PostgreSQL, Lambda, and API Gateway. This may take 5-10 minutes)..." -ForegroundColor Yellow
 $templatePath = Join-Path $ScriptDir "aws-backend-template.yaml"
 aws cloudformation deploy `
   --template-file $templatePath `
   --stack-name "$ProjectName-$Stage" `
   --capabilities CAPABILITY_NAMED_IAM `
-  --parameter-overrides ProjectName=$ProjectName Stage=$Stage GitHubBranch=$BranchName
+  --parameter-overrides ProjectName=$ProjectName Stage=$Stage GitHubBranch=$BranchName CorsOrigins=$CorsOrigins
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "CloudFormation deployment failed."
@@ -49,8 +88,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "CloudFormation stack deployed successfully!" -ForegroundColor Green
 
-# 3. Retrieve Stack Outputs
-Write-Host "Step 3: Retrieving Stack outputs..." -ForegroundColor Yellow
+# 4. Retrieve Stack Outputs
+Write-Host "Step 4: Retrieving Stack outputs..." -ForegroundColor Yellow
 $stackDesc = aws cloudformation describe-stacks --stack-name "$ProjectName-$Stage" | ConvertFrom-Json
 $outputs = $stackDesc.Stacks[0].Outputs
 
@@ -62,8 +101,8 @@ Write-Host "API Gateway Endpoint: $ApiEndpoint" -ForegroundColor Green
 Write-Host "Secrets Manager ARN: $SecretsARN" -ForegroundColor Green
 Write-Host "RDS Endpoint: $DatabaseEndpoint" -ForegroundColor Green
 
-# 4. Create / Retrieve CodeStar Connection
-Write-Host "Step 4: Creating / Retrieving AWS CodeStar Connection to GitHub..." -ForegroundColor Yellow
+# 5. Create / Retrieve CodeStar Connection
+Write-Host "Step 5: Creating / Retrieving AWS CodeStar Connection to GitHub..." -ForegroundColor Yellow
 $connectionName = "diyaa-github-connection"
 $connCheck = aws codestar-connections list-connections | ConvertFrom-Json
 $existingConn = $connCheck.Connections | Where-Object { $_.ConnectionName -eq $connectionName }
@@ -78,10 +117,8 @@ if ($existingConn) {
     Write-Host "ACTION REQUIRED: Go to Console -> Connections and update pending connection." -ForegroundColor Red
 }
 
-# 5. Configure IAM roles for CodeBuild & CodePipeline
-Write-Host "Step 5: Updating IAM roles and policies..." -ForegroundColor Yellow
-$codebuildRoleName = "diyaa-codebuild-service-role"
-$codepipelineRoleName = "diyaa-pipeline-service-role"
+# 6. Configure IAM policy for CodeBuild
+Write-Host "Step 6: Updating CodeBuild IAM policy..." -ForegroundColor Yellow
 
 # CodeBuild IAM role policy needs additional Lambda permissions to run 'update-function-code'
 $cbBackendPolicy = @"
@@ -131,8 +168,8 @@ aws iam put-role-policy --role-name $codebuildRoleName --policy-name "diyaa-code
 Remove-Item $cbPolicyPath -ErrorAction SilentlyContinue
 Write-Host "CodeBuild IAM policies configured." -ForegroundColor Green
 
-# 6. Create CodeBuild Project
-Write-Host "Step 6: Creating CodeBuild Project..." -ForegroundColor Yellow
+# 7. Create CodeBuild Project
+Write-Host "Step 7: Creating CodeBuild Project..." -ForegroundColor Yellow
 $cbConfigTemplate = Get-Content -Raw -Path (Join-Path $ScriptDir "codebuild-backend-config.json")
 $cbConfig = $cbConfigTemplate -replace '\$\{PIPELINE_BUCKET_NAME\}', $PipelineBucketName
 
@@ -149,11 +186,12 @@ if ($cbProjCheck.Projects) {
 }
 Remove-Item $cbConfigPath -ErrorAction SilentlyContinue
 
-# 7. Create CodePipeline
-Write-Host "Step 7: Creating CodePipeline..." -ForegroundColor Yellow
+# 8. Create CodePipeline
+Write-Host "Step 8: Creating CodePipeline..." -ForegroundColor Yellow
 $pipelineConfigTemplate = Get-Content -Raw -Path (Join-Path $ScriptDir "pipeline-backend-config.json")
 $pipelineConfig = $pipelineConfigTemplate -replace '\$\{CONNECTION_ARN\}', $ConnectionARN `
-                                          -replace '\$\{BRANCH_NAME\}', $BranchName
+                                          -replace '\$\{BRANCH_NAME\}', $BranchName `
+                                          -replace '\$\{GITHUB_REPO_FULL_NAME\}', $GitHubRepoFullName
 
 $pipelineConfigPath = Join-Path $ScriptDir "temp-pipeline-backend-config.json"
 $pipelineConfig | Out-File -FilePath $pipelineConfigPath -Encoding ascii

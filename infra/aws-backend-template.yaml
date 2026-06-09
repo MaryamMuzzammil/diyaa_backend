@@ -17,9 +17,11 @@ Parameters:
   GitHubBranch:
     Type: String
     Default: main
+  CorsOrigins:
+    Type: CommaDelimitedList
+    Default: https://d2459vrsbb1r8w.cloudfront.net
 
 Resources:
-  # 1. Secrets Manager Secret for App Credentials
   DiyaaBackendSecrets:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -31,7 +33,6 @@ Resources:
         PasswordLength: 16
         ExcludeCharacters: '"@/\'
 
-  # 2. Database Security Group (Allow public access for Option A)
   DiyaaDatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -40,9 +41,8 @@ Resources:
         - IpProtocol: tcp
           FromPort: 5432
           ToPort: 5432
-          CidrIp: "0.0.0.0/0" # Restricted using master credentials, keeping costs minimal (no NAT gateway)
+          CidrIp: "0.0.0.0/0"
 
-  # 3. RDS PostgreSQL DB Instance
   DiyaaPostgresDB:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Delete
@@ -50,7 +50,7 @@ Resources:
       DBInstanceIdentifier: !Sub "${ProjectName}-${Stage}-db"
       DBName: !Ref DatabaseName
       AllocatedStorage: 20
-      DBInstanceClass: db.t4g.micro # Fits under AWS Free Tier
+      DBInstanceClass: db.t4g.micro
       Engine: postgres
       EngineVersion: "15"
       MasterUsername: !Ref DatabaseMasterUsername
@@ -62,7 +62,6 @@ Resources:
       BackupRetentionPeriod: 0
       DeleteAutomatedBackups: true
 
-  # 4. IAM execution role for Lambda
   DiyaaLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -86,17 +85,16 @@ Resources:
                   - secretsmanager:GetSecretValue
                 Resource: !Ref DiyaaBackendSecrets
 
-  # 5. Lambda Function for NestJS
   DiyaaBackendLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${ProjectName}-${Stage}-function"
       Handler: dist/lambda.handler
-      Runtime: nodejs18.x
-      Timeout: 30
+      Runtime: nodejs20.x
+      Timeout: 29
       MemorySize: 1024
+      Description: DIYAA NestJS backend API (serverless-express)
       Role: !GetAtt DiyaaLambdaExecutionRole.Arn
-      # Code is provisioned and deployed via S3 zip from pipeline
       Code:
         ZipFile: |
           exports.handler = async (event) => {
@@ -108,7 +106,7 @@ Resources:
       Environment:
         Variables:
           NODE_ENV: production
-          PORT: 3000
+          PORT: "3000"
           DB_HOST: !GetAtt DiyaaPostgresDB.Endpoint.Address
           DB_PORT: "5432"
           DB_NAME: !Ref DatabaseName
@@ -116,21 +114,22 @@ Resources:
           DB_PASSWORD: !Join [ "", [ "{{resolve:secretsmanager:", !Ref DiyaaBackendSecrets, ":SecretString:password}}" ] ]
           JWT_SECRET: "diyaa-jwt-secret-change-me-in-secrets-manager-32chars"
           JWT_EXPIRES_SEC: "86400"
-          CORS_ORIGINS: "*"
+          CORS_ORIGINS: !Join [ ",", !Ref CorsOrigins ]
           GROQ_API_KEY: "placeholder-set-in-secrets-manager"
-          TYPEORM_SYNC: "true" # Seeding on start requires synchronize or schema migrations
+          TYPEORM_SYNC: "true"
           SUPERADMIN_EMAIL: "product.owner@diyaa.local"
           SUPERADMIN_PASSWORD: "hellodiyaa123!"
           SUPERADMIN_NAME: "Product Owner"
           SUPERADMIN_SYNC_PASSWORD: "false"
 
-  # 6. HTTP API Gateway
   DiyaaHttpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       Name: !Sub "${ProjectName}-${Stage}-api"
+      Description: DIYAA backend HTTP API
       ProtocolType: HTTP
       CorsConfiguration:
+        AllowCredentials: true
         AllowHeaders:
           - Content-Type
           - Authorization
@@ -141,11 +140,9 @@ Resources:
           - PATCH
           - DELETE
           - OPTIONS
-        AllowOrigins:
-          - "*"
+        AllowOrigins: !Ref CorsOrigins
         MaxAge: 600
 
-  # 7. Integration between API Gateway and Lambda
   DiyaaApiIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
@@ -154,7 +151,6 @@ Resources:
       IntegrationUri: !GetAtt DiyaaBackendLambda.Arn
       PayloadFormatVersion: "2.0"
 
-  # 8. Route configuration ($default routes all traffic)
   DiyaaApiRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
@@ -162,7 +158,6 @@ Resources:
       RouteKey: "$default"
       Target: !Join [ "/", [ "integrations", !Ref DiyaaApiIntegration ] ]
 
-  # 9. Deployment stage
   DiyaaApiStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
@@ -170,7 +165,6 @@ Resources:
       StageName: "$default"
       AutoDeploy: true
 
-  # 10. Lambda invocation permission for API Gateway
   DiyaaLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -189,3 +183,6 @@ Outputs:
   DatabaseEndpoint:
     Description: "PostgreSQL Database Endpoint"
     Value: !GetAtt DiyaaPostgresDB.Endpoint.Address
+  LambdaFunctionName:
+    Description: "Lambda function name for CI/CD deploy"
+    Value: !Ref DiyaaBackendLambda

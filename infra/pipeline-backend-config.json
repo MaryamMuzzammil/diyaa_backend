@@ -21,7 +21,7 @@
             "runOrder": 1,
             "configuration": {
               "ConnectionArn": "${CONNECTION_ARN}",
-              "FullRepositoryId": "MaryamMuzzammil/diyaa_backend",
+              "FullRepositoryId": "${GITHUB_REPO_FULL_NAME}",
               "BranchName": "${BRANCH_NAME}",
               "OutputArtifactFormat": "CODE_ZIP"
             },

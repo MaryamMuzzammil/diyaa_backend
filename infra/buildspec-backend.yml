@@ -3,7 +3,7 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 18
+      nodejs: 20
     commands:
       - echo Installing all npm dependencies...
       - npm ci
@@ -17,12 +17,12 @@ phases:
       - npm run build
       - echo Pruning devDependencies to minimize Lambda package size...
       # Removes devDependencies from node_modules, keeping it lightweight
-      - npm prune --production
+      - npm prune --omit=dev
   post_build:
     commands:
       - echo Compiling zipped Lambda deployment bundle...
       # Packages dist/ and production node_modules/ into a deployable zip file
-      - zip -r diyaa-backend.zip dist node_modules package.json
+      - zip -r diyaa-backend.zip dist node_modules package.json package-lock.json
       - echo Uploading deployment bundle to S3...
       - aws s3 cp diyaa-backend.zip s3://$PIPELINE_BUCKET_NAME/diyaa-backend.zip
       - echo Updating Lambda function code dynamically...
